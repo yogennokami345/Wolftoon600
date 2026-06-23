@@ -6,18 +6,42 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { useTitleOptions } from '@/hooks/useTitleOptions';
 import { useCreateChapter } from '@/hooks/useChapters';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, X, GripVertical, Image as ImageIcon, ArrowLeft, Layers, FolderOpen, FileText, FileUp, Maximize2, Search } from 'lucide-react';
+import {
+  Upload, X, GripVertical, Image as ImageIcon, ArrowLeft, Layers,
+  FolderOpen, FileText, FileUp, Maximize2, Search, Crown, Loader2,
+  CheckCircle2, XCircle,
+} from 'lucide-react';
 import { uploadImagesToChapterBucket } from '@/lib/chapterUpload';
 import mammoth from 'mammoth';
 import RichTextEditor from '@/components/RichTextEditor';
 import { toLocalDatetimeInput, localDatetimeToIso, parseLocalDatetimeInput } from '@/lib/datetime';
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+type ContentType = 'images' | 'novel';
+
+interface FormData {
+  title_id: string;
+  chapter_number: number | '';
+  chapter_title: string;
+  images: string[];
+  content: string;
+  content_type: ContentType;
+  is_vip: boolean;
+  vip_unlock_at: string;
+}
+
+// ─── Component ─────────────────────────────────────────────────────────────────
+
 const ChapterUpload = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -26,35 +50,41 @@ const ChapterUpload = () => {
   const { toast } = useToast();
   const { data: titles } = useTitleOptions();
   const createChapter = useCreateChapter();
+
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textFileInputRef = useRef<HTMLInputElement>(null);
 
   const preselectedTitleId = urlTitleId || searchParams.get('titleId') || '';
   const hasTitleFromUrl = !!urlTitleId;
 
-  const [formData, setFormData] = useState({
+  const [form, setForm] = useState<FormData>({
     title_id: preselectedTitleId,
-    chapter_number: 0,
+    chapter_number: '',
     chapter_title: '',
-    images: [] as string[],
+    images: [],
     content: '',
-    content_type: 'images' as 'images' | 'novel',
+    content_type: 'images',
     is_vip: false,
-    vip_unlock_at: '' as string,
+    vip_unlock_at: '',
   });
 
   const [isDragging, setIsDragging] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [isImportingText, setIsImportingText] = useState(false);
   const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
-  const [chapterTitleSearch, setChapterTitleSearch] = useState('');
+  const [titleSearch, setTitleSearch] = useState('');
+
+  // ── Auth guards ──────────────────────────────────────────────────────────────
 
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
-        <div className="container mx-auto px-4 py-16 text-center">
+        <div className="flex items-center justify-center py-24 gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           <p className="text-muted-foreground">Carregando...</p>
         </div>
       </div>
@@ -66,7 +96,10 @@ const ChapterUpload = () => {
       <div className="min-h-screen bg-background">
         <Header />
         <div className="container mx-auto px-4 py-16 text-center">
-          <h1 className="font-display text-3xl font-bold mb-4">Acesso Negado</h1>
+          <div className="inline-flex p-4 rounded-2xl bg-destructive/10 mb-6">
+            <XCircle className="h-8 w-8 text-destructive" />
+          </div>
+          <h1 className="font-display text-2xl font-bold mb-3">Acesso Negado</h1>
           <p className="text-muted-foreground mb-6">Você precisa ser administrador para acessar esta página.</p>
           <Button onClick={() => navigate('/')}>Voltar ao Início</Button>
         </div>
@@ -74,185 +107,133 @@ const ChapterUpload = () => {
     );
   }
 
-  const extractNumbers = (filename: string): number => {
-    const matches = filename.match(/\d+/g);
-    return matches ? parseInt(matches[matches.length - 1]) : 0;
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  const patch = (updates: Partial<FormData>) => setForm(prev => ({ ...prev, ...updates }));
+
+  // ── Image processing ─────────────────────────────────────────────────────────
+
+  const processImageFiles = async (files: File[]) => {
+    const imageFiles = files.filter(f => /\.(jpg|jpeg|png|gif|webp|avif)$/i.test(f.name));
+
+    if (imageFiles.length === 0) {
+      toast({ title: 'Nenhuma imagem encontrada', description: 'Use JPG, PNG, WEBP, GIF ou AVIF.', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const uploaded = await uploadImagesToChapterBucket(imageFiles, {
+        batchSize: 6,
+        onProgress: setUploadProgress,
+      });
+
+      const urls = uploaded
+        .sort((a, b) => a.order - b.order || a.sourceName.localeCompare(b.sourceName))
+        .map(item => item.url);
+
+      patch({ images: [...form.images, ...urls] });
+
+      toast({ title: `${urls.length} imagem(ns) adicionada(s)` });
+    } catch (err: any) {
+      toast({ title: 'Erro no upload', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    setIsProcessing(true);
-
     const files = Array.from(e.dataTransfer.files);
     await processImageFiles(files);
-    setIsProcessing(false);
-  }, []);
+  }, [form.images]);
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length === 0) return;
-
-    setIsProcessing(true);
     await processImageFiles(files);
-    setIsProcessing(false);
+    e.target.value = '';
   };
 
-  const processImageFiles = async (files: File[]) => {
-    const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp|avif)$/i.test(file.name));
-
-    if (imageFiles.length === 0) {
-      toast({
-        title: 'Nenhuma imagem encontrada',
-        description: 'Selecione arquivos de imagem (JPG, PNG, WEBP, GIF)',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setUploadProgress(0);
-
-    try {
-      const uploadedImages = await uploadImagesToChapterBucket(imageFiles, {
-        batchSize: 6,
-        onProgress: setUploadProgress,
-      });
-
-      const sortedUrls = uploadedImages
-        .sort((a, b) => a.order - b.order || a.sourceName.localeCompare(b.sourceName))
-        .map((item) => item.url);
-
-      setFormData(prev => ({ ...prev, images: [...prev.images, ...sortedUrls] }));
-
-      toast({
-        title: 'Imagens enviadas!',
-        description: `${sortedUrls.length} imagens adicionadas com sucesso e ordenadas automaticamente.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Erro no upload',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setUploadProgress(0);
-    }
-  };
+  // ── Text import ──────────────────────────────────────────────────────────────
 
   const handleTextFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsImportingText(true);
-
     try {
-      const fileName = file.name.toLowerCase();
+      const name = file.name.toLowerCase();
       let text = '';
-
-      if (fileName.endsWith('.txt')) {
-        // Read .txt file
+      if (name.endsWith('.txt')) {
         text = await file.text();
-      } else if (fileName.endsWith('.docx')) {
-        // Read .docx file using mammoth
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
+      } else if (name.endsWith('.docx')) {
+        const buf = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
         text = result.value;
       } else {
-        toast({
-          title: 'Formato não suportado',
-          description: 'Use arquivos .txt ou .docx',
-          variant: 'destructive',
-        });
+        toast({ title: 'Formato não suportado', description: 'Use .txt ou .docx.', variant: 'destructive' });
         return;
       }
-
-      setFormData(prev => ({ ...prev, content: text, content_type: 'novel' }));
-      
-      toast({
-        title: 'Texto importado!',
-        description: `Arquivo "${file.name}" carregado com sucesso.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Erro ao importar',
-        description: error.message,
-        variant: 'destructive',
-      });
+      patch({ content: text, content_type: 'novel' });
+      toast({ title: 'Arquivo importado', description: file.name });
+    } catch (err: any) {
+      toast({ title: 'Erro ao importar', description: err.message, variant: 'destructive' });
     } finally {
       setIsImportingText(false);
+      e.target.value = '';
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  // ── Image drag-to-reorder ────────────────────────────────────────────────────
 
-  const handleDragLeave = () => setIsDragging(false);
-
-  const removeImage = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleImageDragStart = (index: number) => {
-    setDraggedIndex(index);
-  };
+  const handleImageDragStart = (index: number) => setDraggedIndex(index);
 
   const handleImageDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
-
-    const newImages = [...formData.images];
-    const draggedItem = newImages[draggedIndex];
-    newImages.splice(draggedIndex, 1);
-    newImages.splice(index, 0, draggedItem);
-    setFormData(prev => ({ ...prev, images: newImages }));
+    const imgs = [...form.images];
+    const [item] = imgs.splice(draggedIndex, 1);
+    imgs.splice(index, 0, item);
+    patch({ images: imgs });
     setDraggedIndex(index);
   };
 
-  const handleImageDragEnd = () => {
-    setDraggedIndex(null);
-  };
+  const handleImageDragEnd = () => setDraggedIndex(null);
+
+  const removeImage = (index: number) =>
+    patch({ images: form.images.filter((_, i) => i !== index) });
+
+  // ── Submit ───────────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.title_id) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Selecione um título.',
-        variant: 'destructive',
-      });
+    if (!form.title_id) {
+      toast({ title: 'Selecione um título', variant: 'destructive' });
       return;
     }
-
-    if (formData.content_type === 'images' && formData.images.length === 0) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Adicione pelo menos uma imagem.',
-        variant: 'destructive',
-      });
+    if (form.chapter_number === '' || isNaN(Number(form.chapter_number))) {
+      toast({ title: 'Informe o número do capítulo', variant: 'destructive' });
       return;
     }
-
-    if (formData.content_type === 'novel' && !formData.content.trim()) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Adicione o conteúdo de texto da novel.',
-        variant: 'destructive',
-      });
+    if (form.content_type === 'images' && form.images.length === 0) {
+      toast({ title: 'Adicione pelo menos uma imagem', variant: 'destructive' });
       return;
     }
-
-    if (formData.is_vip && formData.vip_unlock_at) {
-      const unlockDate = parseLocalDatetimeInput(formData.vip_unlock_at);
-      if (!unlockDate || unlockDate.getTime() <= Date.now()) {
+    if (form.content_type === 'novel' && !form.content.trim()) {
+      toast({ title: 'Adicione o texto do capítulo', variant: 'destructive' });
+      return;
+    }
+    if (form.is_vip && form.vip_unlock_at) {
+      const d = parseLocalDatetimeInput(form.vip_unlock_at);
+      if (!d || d.getTime() <= Date.now()) {
         toast({
-          title: 'Data inválida',
-          description: 'A data de desbloqueio deve estar no futuro. Deixe vazio para VIP permanente.',
+          title: 'Data de desbloqueio inválida',
+          description: 'Deve ser uma data futura, ou deixe vazio para VIP permanente.',
           variant: 'destructive',
         });
         return;
@@ -260,448 +241,490 @@ const ChapterUpload = () => {
     }
 
     try {
-      const chapterData: any = {
-        title_id: formData.title_id,
-        chapter_number: formData.chapter_number,
-        chapter_title: formData.chapter_title,
-        images: formData.content_type === 'images' ? formData.images : [],
-        content: formData.content_type === 'novel' ? formData.content : null,
-        content_type: formData.content_type,
-        is_vip: formData.is_vip,
-        vip_unlock_at: formData.is_vip && formData.vip_unlock_at
-          ? localDatetimeToIso(formData.vip_unlock_at)
-          : null,
-      };
+      await createChapter.mutateAsync({
+        title_id: form.title_id,
+        chapter_number: Number(form.chapter_number),
+        chapter_title: form.chapter_title,
+        images: form.content_type === 'images' ? form.images : [],
+        content: form.content_type === 'novel' ? form.content : null,
+        content_type: form.content_type,
+        is_vip: form.is_vip,
+        vip_unlock_at: form.is_vip && form.vip_unlock_at ? localDatetimeToIso(form.vip_unlock_at) : null,
+      } as any);
 
-      await createChapter.mutateAsync(chapterData);
       toast({
-        title: 'Capítulo criado!',
-        description: formData.is_vip && formData.vip_unlock_at
-          ? `Será desbloqueado em ${parseLocalDatetimeInput(formData.vip_unlock_at)?.toLocaleString('pt-BR')}.`
-          : 'O capítulo foi adicionado com sucesso.',
+        title: 'Capítulo publicado!',
+        description: form.is_vip && form.vip_unlock_at
+          ? `Desbloqueio em ${parseLocalDatetimeInput(form.vip_unlock_at)?.toLocaleString('pt-BR')}.`
+          : `Capítulo ${form.chapter_number} adicionado.`,
       });
       navigate(-1);
-    } catch (error: any) {
-      toast({
-        title: 'Erro ao criar',
-        description: error.message,
-        variant: 'destructive',
-      });
+    } catch (err: any) {
+      toast({ title: 'Erro ao publicar', description: err.message, variant: 'destructive' });
     }
   };
 
-  const selectedTitle = titles?.find(t => t.id === formData.title_id);
+  // ── Derived ──────────────────────────────────────────────────────────────────
+
+  const selectedTitle = titles?.find(t => t.id === form.title_id);
+  const filteredTitles = (titles || []).filter(t =>
+    !titleSearch.trim() || t.title.toLowerCase().includes(titleSearch.toLowerCase())
+  );
+  const canSubmit = !createChapter.isPending && !isUploading;
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-28">
       <Header />
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-5xl">
+
+        {/* ── Page header ── */}
+        <div className="flex items-center gap-3 mb-6">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="shrink-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-primary/10">
-              <Layers className="h-6 w-6 text-primary" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-primary/10 shrink-0">
+              <Layers className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <h1 className="font-display text-3xl font-bold">Upload de Capítulo</h1>
-              {selectedTitle && <p className="text-muted-foreground">Para: {selectedTitle.title}</p>}
+            <div className="min-w-0">
+              <h1 className="font-display text-xl sm:text-2xl font-bold leading-tight">Novo Capítulo</h1>
+              {selectedTitle && (
+                <p className="text-xs text-muted-foreground truncate">→ {selectedTitle.title}</p>
+              )}
             </div>
           </div>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column - Form */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>Informações</CardTitle>
-                <CardDescription>Dados do capítulo</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {!hasTitleFromUrl && (
-                  <div className="space-y-2">
-                    <Label>Título *</Label>
-                    <div className="relative mb-2">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar título..."
-                        value={chapterTitleSearch}
-                        onChange={(e) => setChapterTitleSearch(e.target.value)}
-                        className="pl-9 h-9 bg-background/50 border-border/30 rounded-lg text-sm"
-                      />
-                    </div>
-                    <Select
-                      value={formData.title_id}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, title_id: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o título" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(titles || []).filter(t => !chapterTitleSearch.trim() || t.title.toLowerCase().includes(chapterTitleSearch.toLowerCase())).map((title) => (
-                          <SelectItem key={title.id} value={title.id}>
-                            {title.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
 
-                <div className="space-y-2">
-                  <Label>Número do Capítulo *</Label>
-                  <Input
-                    type="number"
-                    value={formData.chapter_number}
-                    onChange={(e) => setFormData(prev => ({ ...prev, chapter_number: parseInt(e.target.value) ?? 0 }))}
-                    min={0}
-                  />
-                </div>
+            {/* ── Left panel: metadata ── */}
+            <div className="space-y-4">
+              <Card className="border-border/50">
+                <CardContent className="p-4 space-y-4">
 
-                <div className="space-y-2">
-                  <Label>Título do Capítulo (opcional)</Label>
-                  <Input
-                    value={formData.chapter_title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, chapter_title: e.target.value }))}
-                    placeholder="Ex: O Início da Aventura"
-                  />
-                </div>
-
-                {/* VIP toggle + auto-unlock */}
-                <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_vip}
-                      onChange={(e) => setFormData(prev => ({ ...prev, is_vip: e.target.checked }))}
-                      className="h-4 w-4 accent-primary"
-                    />
-                    <span className="text-sm font-semibold">👑 Capítulo VIP</span>
-                  </label>
-                  {formData.is_vip && (
-                    <div className="space-y-1.5 pl-6">
-                      <Label className="text-xs text-muted-foreground">Desbloquear automaticamente em:</Label>
-                      <div className="flex gap-1.5">
+                  {/* Title selector */}
+                  {!hasTitleFromUrl && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Título *</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
-                          type="datetime-local"
-                          value={formData.vip_unlock_at}
-                          min={toLocalDatetimeInput()}
-                          onChange={(e) => setFormData(prev => ({ ...prev, vip_unlock_at: e.target.value }))}
-                          className="h-9 flex-1"
+                          placeholder="Buscar..."
+                          value={titleSearch}
+                          onChange={e => setTitleSearch(e.target.value)}
+                          className="pl-8 h-8 text-sm"
                         />
-                        {formData.vip_unlock_at && (
-                          <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setFormData(prev => ({ ...prev, vip_unlock_at: '' }))}>
-                            Limpar
-                          </Button>
-                        )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground">
-                        Vazio = VIP permanente. Com data futura = vira gratuito automaticamente.
-                      </p>
+                      <Select value={form.title_id} onValueChange={v => patch({ title_id: v })}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Selecionar título" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredTitles.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
-                </div>
 
-                {selectedTitle && (
-                  <div className="p-3 bg-muted/30 rounded-lg border border-border/30">
-                    <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider">Título selecionado</p>
-                    <div className="w-full max-w-[120px] mx-auto">
-                      <div className="relative aspect-[3/4] rounded-lg overflow-hidden">
+                  {/* Selected title mini card */}
+                  {selectedTitle && (
+                    <div className="flex items-center gap-2.5 p-2.5 bg-muted/30 rounded-lg border border-border/30">
+                      <div className="w-10 shrink-0 aspect-[3/4] rounded overflow-hidden">
                         <img src={selectedTitle.cover} alt={selectedTitle.title} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent opacity-80" />
-                        <div className="absolute top-1.5 right-1.5 bg-primary text-primary-foreground text-[9px] px-1.5 py-0.5 rounded font-semibold">
-                          {selectedTitle.type}
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 p-2">
-                          <p className="font-semibold text-[10px] text-white line-clamp-2 leading-tight">{selectedTitle.title}</p>
-                        </div>
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium truncate leading-tight">{selectedTitle.title}</p>
+                        <p className="text-[10px] text-muted-foreground">{selectedTitle.status}</p>
+                      </div>
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0.5 shrink-0">{selectedTitle.type}</Badge>
                     </div>
+                  )}
+
+                  {/* Chapter number */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Número *</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={form.chapter_number}
+                      onChange={e => patch({ chapter_number: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                      placeholder="Ex: 1, 1.5, 10"
+                      className="h-9 font-mono"
+                    />
                   </div>
-                )}
 
-                <div className="pt-4">
-                  <Button type="submit" className="w-full" disabled={createChapter.isPending}>
-                    {createChapter.isPending ? 'Salvando...' : 'Criar Capítulo'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  {/* Chapter title */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">
+                      Título <span className="text-muted-foreground font-normal">(opcional)</span>
+                    </Label>
+                    <Input
+                      value={form.chapter_title}
+                      onChange={e => patch({ chapter_title: e.target.value })}
+                      placeholder="O Início da Aventura"
+                      className="h-9"
+                    />
+                  </div>
 
-            {/* Right Column - Content */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Conteúdo do Capítulo</CardTitle>
-                <CardDescription>Escolha o tipo de conteúdo</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs 
-                  value={formData.content_type} 
-                  onValueChange={(v) => setFormData(prev => ({ ...prev, content_type: v as 'images' | 'novel' }))}
-                >
-                  <TabsList className="grid w-full grid-cols-2 mb-6">
-                    <TabsTrigger value="images" className="flex items-center gap-2">
-                      <ImageIcon className="h-4 w-4" />
-                      Imagens (Mangá/Manhwa)
-                    </TabsTrigger>
-                    <TabsTrigger value="novel" className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Novel (Texto)
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="images">
-                    {/* Drop Zone */}
-                    <div
-                      onDrop={handleFileDrop}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      className={`
-                        border-2 border-dashed rounded-lg p-8 text-center transition-colors mb-6
-                        ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
-                        ${isProcessing ? 'opacity-50 pointer-events-none' : ''}
-                      `}
+                  {/* VIP toggle */}
+                  <div className={`rounded-lg border p-3 transition-colors ${form.is_vip ? 'border-amber-500/30 bg-amber-500/5' : 'border-border/40'}`}>
+                    <button
+                      type="button"
+                      onClick={() => patch({ is_vip: !form.is_vip })}
+                      className="flex items-center gap-2 w-full text-left"
                     >
-                      <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-lg font-medium mb-2">
-                        {isProcessing ? `Enviando... ${uploadProgress}%` : 'Arraste imagens aqui'}
-                      </p>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Suporta JPG, PNG, WEBP e GIF
-                      </p>
-                      
-                      <div className="flex flex-wrap justify-center gap-3">
-                        <Input
-                          type="file"
-                          accept="image/*,.avif"
-                          multiple
-                          onChange={handleFileInput}
-                          className="hidden"
-                          id="file-upload"
-                        />
-                        <Label htmlFor="file-upload">
-                          <Button type="button" variant="outline" asChild>
-                            <span>
-                              <ImageIcon className="h-4 w-4 mr-2" />
-                              Selecionar Imagens
-                            </span>
-                          </Button>
-                        </Label>
-
-                        <input
-                          type="file"
-                          accept="image/*,.avif"
-                          multiple
-                          // @ts-ignore - webkitdirectory is not in types but works
-                          webkitdirectory=""
-                          onChange={handleFileInput}
-                          className="hidden"
-                          ref={folderInputRef}
-                          id="folder-upload"
-                        />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          onClick={() => folderInputRef.current?.click()}
-                        >
-                          <FolderOpen className="h-4 w-4 mr-2" />
-                          Selecionar Pasta
-                        </Button>
+                      <Crown className={`h-4 w-4 shrink-0 transition-colors ${form.is_vip ? 'text-amber-500' : 'text-muted-foreground/40'}`} />
+                      <span className={`text-sm font-medium transition-colors ${form.is_vip ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                        Capítulo VIP
+                      </span>
+                      <div className={`ml-auto w-8 h-4 rounded-full transition-colors relative ${form.is_vip ? 'bg-amber-500' : 'bg-muted-foreground/20'}`}>
+                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${form.is_vip ? 'left-4' : 'left-0.5'}`} />
                       </div>
-                    </div>
+                    </button>
 
-                    {/* Progress bar */}
-                    {isProcessing && uploadProgress > 0 && (
-                      <div className="mb-6">
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary transition-all duration-300"
-                            style={{ width: `${uploadProgress}%` }}
+                    {form.is_vip && (
+                      <div className="mt-3 pt-3 border-t border-amber-500/20 space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">
+                          Desbloqueio automático
+                          <span className="block opacity-60 font-normal">Vazio = VIP permanente</span>
+                        </Label>
+                        <div className="flex gap-1.5">
+                          <Input
+                            type="datetime-local"
+                            value={form.vip_unlock_at}
+                            min={toLocalDatetimeInput()}
+                            onChange={e => patch({ vip_unlock_at: e.target.value })}
+                            className="h-8 text-xs flex-1"
                           />
+                          {form.vip_unlock_at && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground"
+                              onClick={() => patch({ vip_unlock_at: '' })}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
-                    {/* Image Preview Grid */}
-                    {formData.images.length > 0 && (
-                      <ScrollArea className="h-[400px]">
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                          {formData.images.map((url, index) => (
+            {/* ── Right panel: content ── */}
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <Tabs
+                  value={form.content_type}
+                  onValueChange={v => patch({ content_type: v as ContentType })}
+                >
+                  <TabsList className="grid w-full grid-cols-2 mb-5 h-9">
+                    <TabsTrigger value="images" className="text-xs gap-1.5">
+                      <ImageIcon className="h-3.5 w-3.5" />
+                      Imagens
+                    </TabsTrigger>
+                    <TabsTrigger value="novel" className="text-xs gap-1.5">
+                      <FileText className="h-3.5 w-3.5" />
+                      Novel
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* ── Images tab ── */}
+                  <TabsContent value="images" className="mt-0">
+
+                    {/* Drop zone */}
+                    <div
+                      onDrop={handleFileDrop}
+                      onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`
+                        border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer mb-4
+                        ${isDragging ? 'border-primary bg-primary/8 scale-[1.01]' : 'border-muted-foreground/20 hover:border-primary/40 hover:bg-accent/20'}
+                        ${isUploading ? 'opacity-50 pointer-events-none' : ''}
+                      `}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*,.avif"
+                        multiple
+                        onChange={handleFileInput}
+                        className="hidden"
+                        ref={fileInputRef}
+                      />
+                      <input
+                        type="file"
+                        accept="image/*,.avif"
+                        multiple
+                        // @ts-ignore
+                        webkitdirectory=""
+                        onChange={handleFileInput}
+                        className="hidden"
+                        ref={folderInputRef}
+                      />
+
+                      {isUploading ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                          <p className="text-sm font-medium">Enviando... {uploadProgress}%</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="p-3 rounded-xl bg-muted/50">
+                            <Upload className="h-7 w-7 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">Arraste imagens ou clique para selecionar</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">JPG · PNG · WEBP · GIF · AVIF</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Folder button */}
+                    <div className="flex items-center gap-2 mb-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={e => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                        disabled={isUploading}
+                        className="text-xs h-8"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                        Selecionar pasta
+                      </Button>
+                      {form.images.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {form.images.length} página(s) adicionada(s)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Progress bar */}
+                    {isUploading && uploadProgress > 0 && (
+                      <Progress value={uploadProgress} className="h-1.5 mb-4" />
+                    )}
+
+                    {/* Image grid */}
+                    {form.images.length > 0 && (
+                      <ScrollArea className="h-[420px]">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pr-1">
+                          {form.images.map((url, index) => (
                             <div
                               key={index}
                               draggable
                               onDragStart={() => handleImageDragStart(index)}
-                              onDragOver={(e) => handleImageDragOver(e, index)}
+                              onDragOver={e => handleImageDragOver(e, index)}
                               onDragEnd={handleImageDragEnd}
                               className={`
-                                relative group aspect-[2/3] rounded-lg overflow-hidden border border-border
-                                cursor-grab active:cursor-grabbing
-                                ${draggedIndex === index ? 'opacity-50' : ''}
+                                relative group aspect-[2/3] rounded-lg overflow-hidden border border-border/50
+                                cursor-grab active:cursor-grabbing transition-opacity
+                                ${draggedIndex === index ? 'opacity-40 scale-95' : ''}
                               `}
                             >
                               <img
                                 src={url}
                                 alt={`Página ${index + 1}`}
                                 className="w-full h-full object-cover"
+                                loading="lazy"
                               />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                <GripVertical className="h-5 w-5 text-white" />
-                                <span className="text-white font-bold">{index + 1}</span>
+
+                              {/* Overlay on hover */}
+                              <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
+                                <GripVertical className="h-4 w-4 text-white/70" />
+                                <span className="text-white text-xs font-bold">{index + 1}</span>
                               </div>
-                              <Button
+
+                              {/* Delete */}
+                              <button
                                 type="button"
-                                variant="destructive"
-                                size="icon"
-                                className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                                 onClick={() => removeImage(index)}
+                                className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive"
                               >
                                 <X className="h-3 w-3" />
-                              </Button>
+                              </button>
+
+                              {/* Page number pill */}
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded-full leading-none">
+                                {index + 1}
+                              </span>
                             </div>
                           ))}
                         </div>
                       </ScrollArea>
                     )}
 
-                    {formData.images.length === 0 && (
-                      <p className="text-center text-muted-foreground py-8">
-                        Nenhuma imagem adicionada ainda
-                      </p>
+                    {form.images.length === 0 && !isUploading && (
+                      <div className="text-center py-10 text-muted-foreground">
+                        <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                        <p className="text-sm">Nenhuma imagem ainda</p>
+                      </div>
                     )}
                   </TabsContent>
 
-                  <TabsContent value="novel">
-                    {/* Text Import Zone */}
-                    <div className="space-y-4">
-                      <div className="border-2 border-dashed border-purple-500/30 rounded-lg p-6 text-center bg-purple-500/5">
-                        <FileUp className="h-10 w-10 mx-auto mb-3 text-purple-500" />
-                        <p className="text-lg font-medium mb-2">Importar arquivo de texto</p>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Suporta arquivos .txt e .docx
-                        </p>
-                        
-                        <Input
-                          type="file"
-                          accept=".txt,.docx"
-                          onChange={handleTextFileImport}
-                          className="hidden"
-                          id="text-file-upload"
-                          disabled={isImportingText}
-                        />
-                        <Label htmlFor="text-file-upload">
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            asChild
-                            className="border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
-                          >
-                            <span>
-                              <FileText className="h-4 w-4 mr-2" />
-                              {isImportingText ? 'Importando...' : 'Selecionar Arquivo'}
-                            </span>
-                          </Button>
-                        </Label>
-                      </div>
+                  {/* ── Novel tab ── */}
+                  <TabsContent value="novel" className="mt-0">
 
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label>Conteúdo do Capítulo</Label>
-                          <span className="text-xs text-muted-foreground">
-                            {formData.content.length.toLocaleString()} caracteres
-                          </span>
+                    {/* File import zone */}
+                    <div
+                      className="border-2 border-dashed border-violet-500/30 rounded-xl p-5 text-center bg-violet-500/5 mb-4 cursor-pointer hover:border-violet-500/50 transition-colors"
+                      onClick={() => textFileInputRef.current?.click()}
+                    >
+                      <input
+                        type="file"
+                        accept=".txt,.docx"
+                        onChange={handleTextFileImport}
+                        className="hidden"
+                        ref={textFileInputRef}
+                        disabled={isImportingText}
+                      />
+                      {isImportingText ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 text-violet-500 animate-spin" />
+                          <p className="text-sm text-violet-500">Importando...</p>
                         </div>
-                        <RichTextEditor
-                          value={formData.content}
-                          onChange={(value) => setFormData(prev => ({ ...prev, content: value }))}
-                          placeholder="Cole ou digite o texto do capítulo aqui..."
-                          rows={16}
-                        />
-                      </div>
-
-                      {formData.content && (
-                        <div className="p-4 bg-muted/50 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium">Preview</h4>
-                            <Button 
-                              type="button"
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => setIsFullscreenPreview(true)}
-                              className="flex items-center gap-2"
-                            >
-                              <Maximize2 className="h-4 w-4" />
-                              Tela Cheia
-                            </Button>
-                          </div>
-                          <div className="prose prose-sm dark:prose-invert max-h-48 overflow-y-auto">
-                            <div 
-                              className="whitespace-pre-wrap text-sm"
-                              dangerouslySetInnerHTML={{ 
-                                __html: formData.content
-                                  .slice(0, 500)
-                                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                  .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                  .replace(/^# (.*?)$/gm, '<h1 class="text-lg font-bold">$1</h1>')
-                                  .replace(/^## (.*?)$/gm, '<h2 class="text-base font-semibold">$1</h2>')
-                                  .replace(/^> (.*?)$/gm, '<blockquote class="border-l-2 border-primary pl-2 italic">$1</blockquote>')
-                                  + (formData.content.length > 500 ? '...' : '')
-                              }}
-                            />
-                          </div>
-                        </div>
+                      ) : (
+                        <>
+                          <FileUp className="h-7 w-7 mx-auto mb-2 text-violet-500/60" />
+                          <p className="text-sm font-medium">Importar arquivo de texto</p>
+                          <p className="text-xs text-muted-foreground">.txt ou .docx</p>
+                        </>
                       )}
-
-                      {/* Fullscreen Preview Dialog */}
-                      <Dialog open={isFullscreenPreview} onOpenChange={setIsFullscreenPreview}>
-                        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              <FileText className="h-5 w-5 text-purple-500" />
-                              Preview do Capítulo
-                              {formData.chapter_title && ` - ${formData.chapter_title}`}
-                            </DialogTitle>
-                          </DialogHeader>
-                          <ScrollArea className="flex-1 pr-4">
-                            <div className="prose prose-lg dark:prose-invert max-w-none py-4">
-                              <div 
-                                className="whitespace-pre-wrap leading-relaxed"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: formData.content
-                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                    .replace(/^# (.*?)$/gm, '<h1 class="text-2xl font-bold mt-6 mb-3">$1</h1>')
-                                    .replace(/^## (.*?)$/gm, '<h2 class="text-xl font-semibold mt-5 mb-2">$1</h2>')
-                                    .replace(/^### (.*?)$/gm, '<h3 class="text-lg font-medium mt-4 mb-2">$1</h3>')
-                                    .replace(/^> (.*?)$/gm, '<blockquote class="border-l-4 border-purple-500 pl-4 py-2 my-3 italic bg-purple-500/5 rounded-r">$1</blockquote>')
-                                    .replace(/^- (.*?)$/gm, '<li class="ml-4">$1</li>')
-                                    .replace(/^(\d+)\. (.*?)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-                                    .replace(/^---$/gm, '<hr class="my-6 border-border" />')
-                                }}
-                              />
-                            </div>
-                          </ScrollArea>
-                          <div className="pt-4 border-t border-border flex justify-between items-center">
-                            <span className="text-sm text-muted-foreground">
-                              {formData.content.length.toLocaleString()} caracteres
-                            </span>
-                            <Button variant="outline" onClick={() => setIsFullscreenPreview(false)}>
-                              Fechar
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
                     </div>
+
+                    {/* Editor */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium">Conteúdo</Label>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {form.content.length.toLocaleString('pt-BR')} caracteres
+                        </span>
+                      </div>
+                      <RichTextEditor
+                        value={form.content}
+                        onChange={value => patch({ content: value })}
+                        placeholder="Cole ou escreva o texto do capítulo..."
+                        rows={16}
+                      />
+                    </div>
+
+                    {/* Preview */}
+                    {form.content && (
+                      <div className="mt-4 p-4 bg-muted/40 rounded-xl border border-border/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Preview</p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsFullscreenPreview(true)}
+                            className="h-7 text-xs gap-1.5"
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                            Tela cheia
+                          </Button>
+                        </div>
+                        <NovelPreview content={form.content.slice(0, 600)} truncated={form.content.length > 600} />
+                      </div>
+                    )}
                   </TabsContent>
                 </Tabs>
               </CardContent>
             </Card>
           </div>
+
+          {/* ── Fullscreen preview dialog ── */}
+          <Dialog open={isFullscreenPreview} onOpenChange={setIsFullscreenPreview}>
+            <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4 text-violet-500" />
+                  {form.chapter_title || `Capítulo ${form.chapter_number}`}
+                </DialogTitle>
+              </DialogHeader>
+              <ScrollArea className="flex-1 pr-2">
+                <div className="py-2">
+                  <NovelPreview content={form.content} />
+                </div>
+              </ScrollArea>
+              <div className="pt-3 border-t border-border flex justify-between items-center">
+                <span className="text-xs text-muted-foreground">
+                  {form.content.length.toLocaleString('pt-BR')} caracteres
+                </span>
+                <Button variant="outline" size="sm" onClick={() => setIsFullscreenPreview(false)}>
+                  Fechar
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </form>
       </div>
+
+      {/* ── Sticky bottom submit bar ── */}
+      <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t border-border/50 px-4 py-3 z-20">
+        <div className="max-w-5xl mx-auto flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            {form.images.length > 0 && form.content_type === 'images' && (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>{form.images.length} imagem(ns) pronta(s)</span>
+              </div>
+            )}
+            {form.is_vip && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <Crown className="h-3.5 w-3.5" />
+                <span>VIP{form.vip_unlock_at ? ' com desbloqueio agendado' : ' permanente'}</span>
+              </div>
+            )}
+          </div>
+          <Button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="shrink-0"
+          >
+            {createChapter.isPending
+              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Publicando...</>
+              : <><Upload className="h-4 w-4 mr-2" />Publicar capítulo</>
+            }
+          </Button>
+        </div>
+      </div>
     </div>
+  );
+};
+
+// ─── Novel preview renderer ────────────────────────────────────────────────────
+
+const NovelPreview = ({ content, truncated = false }: { content: string; truncated?: boolean }) => {
+  const html = content
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^# (.*?)$/gm, '<h1 class="text-lg font-bold mt-4 mb-2">$1</h1>')
+    .replace(/^## (.*?)$/gm, '<h2 class="text-base font-semibold mt-3 mb-1">$1</h2>')
+    .replace(/^### (.*?)$/gm, '<h3 class="text-sm font-medium mt-2 mb-1">$1</h3>')
+    .replace(/^> (.*?)$/gm, '<blockquote class="border-l-2 border-violet-500 pl-3 py-1 my-2 italic text-muted-foreground">$1</blockquote>')
+    .replace(/^---$/gm, '<hr class="my-3 border-border" />')
+    .replace(/\n/g, '<br />');
+
+  return (
+    <div
+      className="text-sm leading-relaxed whitespace-pre-wrap"
+      dangerouslySetInnerHTML={{ __html: html + (truncated ? '<span class="text-muted-foreground">...</span>' : '') }}
+    />
   );
 };
 
