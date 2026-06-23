@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { Star, Eye, Flame, Sparkles } from "lucide-react";
+import { Star, Eye, Flame, Sparkles, BookOpen } from "lucide-react";
 import { memo, useState, useCallback } from "react";
 
 import type { TitleStatus } from "@/lib/titleFormOptions";
@@ -23,99 +22,141 @@ export interface MangaCardProps {
   artist?: string;
 }
 
-const MangaCard = memo(({ 
-  id, title, cover, type, rating, chapters, status, genres, views, slug, isHot, isNew, rank, author, artist
+// ─── Rank medal colors ──────────────────────────────────────────────────────
+
+const RANK_STYLE: Record<number, string> = {
+  1: 'bg-amber-400 text-amber-950',
+  2: 'bg-slate-300 text-slate-900',
+  3: 'bg-orange-400 text-orange-950',
+};
+
+// ─── Status dot ─────────────────────────────────────────────────────────────
+
+const STATUS_DOT: Partial<Record<TitleStatus, string>> = {
+  ongoing:      'bg-emerald-400',
+  Em_andamento: 'bg-emerald-400',
+  completed:    'bg-sky-400',
+  hiatus:       'bg-amber-400',
+  cancelled:    'bg-red-400',
+};
+
+const formatViews = (v: number): string => {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return String(v);
+};
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+const MangaCard = memo(({
+  id, title, cover, type, rating, chapters, status, views,
+  slug, isHot, isNew, rank, author, artist,
 }: MangaCardProps) => {
   const [imageLoaded, setImageLoaded] = useState(false);
-  const handleImageLoad = useCallback(() => setImageLoaded(true), []);
+  const handleLoad = useCallback(() => setImageLoaded(true), []);
 
-  const formatViews = (v: number) => {
-    if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
-    return v.toString();
-  };
+  const displayCreator = artist && artist !== author
+    ? `${author} / ${artist}`
+    : author;
 
-  const displayCreator = artist && artist !== author ? `${author} / ${artist}` : author;
+  // Which top-left badge to show — rank > hot > new, at most one
+  const topBadge = rank && rank <= 3
+    ? 'rank'
+    : isHot
+    ? 'hot'
+    : isNew
+    ? 'new'
+    : null;
+
+  const dotClass = STATUS_DOT[status] || 'bg-muted-foreground/50';
 
   return (
-    <Link 
+    <Link
       to={`/manga/${slug || id}`}
-      className="group relative block rounded-lg overflow-hidden"
+      className="group relative block rounded-xl overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-muted">
-        {!imageLoaded && <div className="absolute inset-0 bg-muted animate-pulse" />}
-        
-        <img 
-          src={cover} 
+      {/* ── Cover image ── */}
+      <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-muted">
+
+        {/* Skeleton shimmer */}
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-muted animate-pulse" />
+        )}
+
+        <img
+          src={cover}
           alt={title}
           loading="lazy"
-          onLoad={handleImageLoad}
-          className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+          onLoad={handleLoad}
+          className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-[1.04] ${
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}
         />
-        
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-80" />
 
-        {/* Top left badges */}
-        <div className="absolute top-2 left-2 flex flex-col gap-1">
-          {rank && rank <= 3 && (
-            <div className={`
-              w-6 h-6 flex items-center justify-center rounded-md font-black text-xs
-              ${rank === 1 
-                ? 'bg-yellow-400 text-yellow-950' 
-                : rank === 2 
-                ? 'bg-slate-300 text-slate-900' 
-                : 'bg-orange-400 text-orange-950'
-              }
-            `}>
-              {rank}
-            </div>
-          )}
-          {isHot && !rank && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-red-500 rounded text-[10px] font-bold text-white">
-              <Flame className="h-2.5 w-2.5" /> HOT
-            </div>
-          )}
-          {isNew && !isHot && !rank && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-500 rounded text-[10px] font-bold text-white">
-              <Sparkles className="h-2.5 w-2.5" /> NEW
-            </div>
-          )}
+        {/* Gradient overlay — heavier at bottom for legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+
+        {/* ── Top-left badge: rank / hot / new ── */}
+        {topBadge === 'rank' && rank && (
+          <div className={`absolute top-2 left-2 w-6 h-6 flex items-center justify-center rounded-md font-black text-xs shadow ${RANK_STYLE[rank]}`}>
+            {rank}
+          </div>
+        )}
+        {topBadge === 'hot' && (
+          <div className="absolute top-2 left-2 flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-600 rounded-md text-[9px] font-black text-white shadow">
+            <Flame className="h-2.5 w-2.5" />
+            HOT
+          </div>
+        )}
+        {topBadge === 'new' && (
+          <div className="absolute top-2 left-2 flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-600 rounded-md text-[9px] font-black text-white shadow">
+            <Sparkles className="h-2.5 w-2.5" />
+            NEW
+          </div>
+        )}
+
+        {/* ── Top-right: type ── */}
+        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-[9px] font-bold text-white/90 border border-white/10">
+          {type}
         </div>
 
-        {/* Type badge top right */}
-        <Badge className="absolute top-2 right-2 bg-primary text-primary-foreground border-0 text-[10px] px-1.5 py-0 font-semibold rounded">
-          {type}
-        </Badge>
-
-        {/* Bottom info */}
-        <div className="absolute bottom-0 left-0 right-0 p-2">
-          <h3 className="font-semibold text-[11px] md:text-xs text-white line-clamp-2 leading-tight mb-0.5">
+        {/* ── Bottom: title + meta ── */}
+        <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2.5 pt-6">
+          <h3 className="font-bold text-[11px] sm:text-xs text-white line-clamp-2 leading-snug">
             {title}
           </h3>
+
           {displayCreator && (
-            <p className="text-[9px] text-white/50 truncate mb-1">
+            <p className="text-[9px] text-white/45 truncate mt-0.5">
               {displayCreator}
             </p>
           )}
-          <div className="flex items-center gap-1.5 text-[9px] text-white/70">
-            <span className="flex items-center gap-0.5">
-              <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-400" />
+
+          {/* Stats row */}
+          <div className="flex items-center gap-2 mt-1.5">
+            {/* Rating */}
+            <span className="flex items-center gap-0.5 text-[9px] font-semibold text-amber-400">
+              <Star className="h-2.5 w-2.5 fill-current" />
               {rating.toFixed(1)}
             </span>
-            <span className="text-white/30">•</span>
-            <span className="flex items-center gap-0.5">
+
+            {/* Views */}
+            <span className="flex items-center gap-0.5 text-[9px] text-white/50">
               <Eye className="h-2.5 w-2.5" />
               {formatViews(views)}
             </span>
+
+            {/* Chapters — pushed to right with ml-auto */}
             {chapters !== undefined && (
-              <>
-                <span className="text-white/30">•</span>
-                <span>{chapters} caps</span>
-              </>
+              <span className="flex items-center gap-0.5 text-[9px] text-white/50 ml-auto">
+                <BookOpen className="h-2.5 w-2.5" />
+                {chapters}
+              </span>
             )}
           </div>
+
+          {/* Status dot strip — a thin line at the very bottom edge */}
+          <div className={`absolute bottom-0 left-0 right-0 h-[2px] ${dotClass} opacity-70`} />
         </div>
       </div>
     </Link>
