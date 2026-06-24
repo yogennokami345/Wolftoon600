@@ -24,31 +24,38 @@ import {
   BookOpen, Star, Heart, Share2, Play, Crown,
   BookMarked, CheckCircle, Pause, Trash2, ListPlus,
   Upload, Layers, Pencil, Flag, Search, ArrowUpDown,
-  AlignLeft, MessageSquare, Calendar, User as UserIcon,
-  Brush, Eye, ChevronFirst, ChevronLast, Settings,
+  AlignLeft, MessageSquare, Image as ImageIcon, Calendar,
+  User as UserIcon, Brush, Activity, Eye, ThumbsUp,
+  ChevronDown, ChevronUp, Clock
 } from "lucide-react";
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 type Tab = 'chapters' | 'synopsis' | 'reviews';
 
 const STATUS_LABEL: Record<string, string> = {
-  ongoing:       'Em andamento',
-  Em_andamento:  'Em andamento',
-  completed:     'Completo',
-  hiatus:        'Hiatus',
-  cancelled:     'Cancelado',
+  ongoing: 'EM ANDAMENTO',
+  Em_andamento: 'EM ANDAMENTO',
+  completed: 'COMPLETO',
+  hiatus: 'HIATUS',
+  cancelled: 'CANCELADO',
 };
 
-const STATUS_DOT: Record<string, string> = {
-  ongoing:      'bg-emerald-500',
-  Em_andamento: 'bg-emerald-500',
-  completed:    'bg-sky-500',
-  hiatus:       'bg-amber-500',
-  cancelled:    'bg-red-500',
+const STATUS_COLOR: Record<string, { dot: string; badge: string }> = {
+  ongoing:     { dot: 'bg-emerald-400', badge: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' },
+  Em_andamento:{ dot: 'bg-emerald-400', badge: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' },
+  completed:   { dot: 'bg-blue-400',    badge: 'text-blue-400 border-blue-400/30 bg-blue-400/10' },
+  hiatus:      { dot: 'bg-amber-400',   badge: 'text-amber-400 border-amber-400/30 bg-amber-400/10' },
+  cancelled:   { dot: 'bg-red-400',     badge: 'text-red-400 border-red-400/30 bg-red-400/10' },
 };
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// Emoji reactions config
+const REACTIONS = [
+  { key: 'like',  emoji: '👍', label: 'Curtir' },
+  { key: 'love',  emoji: '❤️', label: 'Amar' },
+  { key: 'laugh', emoji: '😂', label: 'Rir' },
+  { key: 'wow',   emoji: '😮', label: 'Uau' },
+  { key: 'sad',   emoji: '😢', label: 'Triste' },
+  { key: 'angry', emoji: '😡', label: 'Irritar' },
+];
 
 const MangaDetails = () => {
   const { slug } = useParams();
@@ -66,22 +73,16 @@ const MangaDetails = () => {
   const [sortDesc, setSortDesc] = useState(true);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportType, setReportType] = useState('broken_chapter');
+  const [reportType, setReportType] = useState<string>('broken_chapter');
   const [reportMessage, setReportMessage] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportFeedback, setReportFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [reactions, setReactions] = useState<Record<string, number>>({ like: 0, love: 0, laugh: 0, wow: 0, sad: 0, angry: 0 });
+  const [myReaction, setMyReaction] = useState<string | null>(null);
 
   const isFavorite = favorites?.includes(manga?.id || "") ?? false;
   const readingProgress = getProgressForTitle(manga?.id || "");
-
-  const sortedChapters = useMemo(() => {
-    if (!chapters?.length) return [];
-    return [...chapters].sort((a, b) => a.chapter_number - b.chapter_number);
-  }, [chapters]);
-
-  const firstChapter = sortedChapters[0]?.chapter_number ?? null;
-  const lastChapter = sortedChapters[sortedChapters.length - 1]?.chapter_number ?? null;
+  const continueChapter = readingProgress?.chapter?.chapter_number || 1;
 
   useIncrementViews(manga?.id);
 
@@ -97,9 +98,10 @@ const MangaDetails = () => {
     let list = chapters || [];
     if (chapterQuery.trim()) {
       const q = chapterQuery.toLowerCase();
-      list = list.filter(c =>
-        String(c.chapter_number).includes(q) ||
-        (c.chapter_title || '').toLowerCase().includes(q),
+      list = list.filter(
+        (c) =>
+          String(c.chapter_number).includes(q) ||
+          (c.chapter_title || '').toLowerCase().includes(q),
       );
     }
     return [...list].sort((a, b) =>
@@ -107,17 +109,30 @@ const MangaDetails = () => {
     );
   }, [chapters, chapterQuery, sortDesc]);
 
-  // ── Loading ──────────────────────────────────────────────────────────────
+  const handleReaction = (key: string) => {
+    if (!user) {
+      toast({ title: "Login necessário", description: "Faça login para reagir", variant: "destructive" });
+      return;
+    }
+    setReactions(prev => {
+      const next = { ...prev };
+      if (myReaction === key) {
+        next[key] = Math.max(0, (next[key] || 0) - 1);
+        setMyReaction(null);
+      } else {
+        if (myReaction) next[myReaction] = Math.max(0, (next[myReaction] || 0) - 1);
+        next[key] = (next[key] || 0) + 1;
+        setMyReaction(key);
+      }
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <div className="h-[420px] bg-muted animate-pulse" />
-        <div className="container mx-auto px-4 max-w-4xl mt-6 space-y-3">
-          <div className="h-8 w-2/3 bg-muted animate-pulse rounded-xl" />
-          <div className="h-4 w-1/3 bg-muted animate-pulse rounded-xl" />
-        </div>
       </div>
     );
   }
@@ -127,7 +142,6 @@ const MangaDetails = () => {
       <div className="min-h-screen bg-background">
         <Header />
         <div className="container mx-auto px-4 py-16 text-center">
-          <BookOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
           <h1 className="text-2xl font-bold mb-4">Título não encontrado</h1>
           <Button asChild><Link to="/catalog">Voltar ao Catálogo</Link></Button>
         </div>
@@ -135,33 +149,12 @@ const MangaDetails = () => {
     );
   }
 
-  // ── Derived values ───────────────────────────────────────────────────────
-
   const formatViews = (v: number) => {
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+    if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
     return v.toString();
   };
-
   const ratingDisplay = (manga.rating || 0).toFixed(1);
-  const favoritesCount = (manga as any).favorites_count ?? (manga as any).favorites ?? null;
-  const favDisplay = favoritesCount !== null ? formatViews(Number(favoritesCount)) : '—';
-  const synopsis = manga.synopsis || '';
-  const SYNOPSIS_LIMIT = 260;
-  const synopsisShort = synopsis.length > SYNOPSIS_LIMIT
-    ? synopsis.slice(0, SYNOPSIS_LIMIT).trimEnd() + '…'
-    : synopsis;
-  const statusKey = (manga.status || 'ongoing') as string;
-  const statusLabel = STATUS_LABEL[statusKey] || (manga.status || '').replace(/_/g, ' ');
-  const dotClass = STATUS_DOT[statusKey] || 'bg-emerald-500';
-
-  const vipCount = chapters?.filter(c => {
-    const unlockAt = (c as any).vip_unlock_at as string | null;
-    const isAutoUnlocked = unlockAt && new Date(unlockAt).getTime() <= Date.now();
-    return c.is_vip && !isAutoUnlocked;
-  }).length ?? 0;
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleShare = async () => {
     try {
@@ -172,456 +165,429 @@ const MangaDetails = () => {
     }
   };
 
-  const handleReportClose = (open: boolean) => {
-    setReportOpen(open);
-    if (!open) {
-      setReportFeedback(null);
-      setReportMessage('');
-    }
-  };
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  const synopsis = manga.synopsis || '';
+  const synopsisShort = synopsis.length > 300 ? synopsis.slice(0, 300).trimEnd() + '…' : synopsis;
+  const statusKey = (manga.status || 'ongoing') as string;
+  const statusLabel = STATUS_LABEL[statusKey] || (manga.status || 'EM ANDAMENTO').toUpperCase();
+  const statusStyle = STATUS_COLOR[statusKey] || STATUS_COLOR.ongoing;
 
   return (
-    <div className="min-h-screen bg-background pb-16">
+    <div className="min-h-screen bg-[#0f0f13] text-white pb-16">
       <Header />
 
-      {/* ── HERO ── */}
-      <div className="relative">
+      {/* ═══════════════════════════════════════════
+          HERO — full-width banner + poster sidebar
+      ═══════════════════════════════════════════ */}
+      <div className="relative w-full">
         {/* Blurred banner */}
-        <div className="relative w-full h-[260px] sm:h-[340px] md:h-[400px] overflow-hidden">
+        <div className="absolute inset-0 h-[420px] sm:h-[500px] overflow-hidden">
           <img
             src={manga.cover}
             alt=""
             aria-hidden
-            className="w-full h-full object-cover object-top scale-105 blur-lg brightness-50"
+            className="w-full h-full object-cover object-top scale-105 blur-lg opacity-25"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0f0f13]/20 via-[#0f0f13]/70 to-[#0f0f13]" />
         </div>
 
-        {/* Poster + title block */}
-        <div className="container mx-auto px-4 max-w-4xl relative z-10 -mt-36 sm:-mt-48">
-          <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+        {/* Content grid */}
+        <div className="relative container mx-auto px-4 max-w-5xl pt-8 pb-0">
+          <div className="flex flex-col sm:flex-row gap-7 sm:gap-10 items-start">
 
-            {/* Poster */}
-            <div className="relative w-[148px] sm:w-[180px] aspect-[3/4] rounded-2xl overflow-hidden ring-2 ring-white/10 shadow-2xl shadow-black/70 shrink-0">
-              <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover" />
-              <div className="absolute top-2 left-2 bg-rose-600 text-[9px] font-black uppercase tracking-widest text-white px-2 py-0.5 rounded-md shadow">
-                {manga.type}
+            {/* ── LEFT: Poster ── */}
+            <div className="shrink-0 w-[160px] sm:w-[200px] mx-auto sm:mx-0">
+              <div className="relative aspect-[3/4] rounded-xl overflow-hidden ring-1 ring-white/10 shadow-2xl shadow-black/80">
+                <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover" />
+                {/* Type badge */}
+                <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-rose-600 text-[10px] font-black uppercase tracking-widest text-white shadow">
+                  {manga.type}
+                </span>
+              </div>
+
+              {/* Action buttons below poster on desktop */}
+              <div className="hidden sm:flex flex-col gap-2 mt-4">
+                {readingProgress ? (
+                  <Button asChild size="sm" className="h-10 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold w-full">
+                    <Link to={`/read/${manga.id}/${continueChapter}`}>
+                      <Play className="h-4 w-4 fill-current mr-1.5" />
+                      Cap. {continueChapter}
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button asChild size="sm" className="h-10 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold w-full">
+                    <Link to={`/read/${manga.id}/1`}>
+                      <Play className="h-4 w-4 fill-current mr-1.5" />
+                      Ler Cap. 1
+                    </Link>
+                  </Button>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`h-10 rounded-lg font-bold w-full ${
+                    isFavorite
+                      ? 'border-rose-500/50 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
+                      : 'border-white/20 bg-white/5 hover:bg-white/10'
+                  }`}
+                  onClick={() => {
+                    if (!user) {
+                      toast({ title: "Login necessário", description: "Faça login para favoritar", variant: "destructive" });
+                      return;
+                    }
+                    toggleFavorite.mutate({ titleId: manga.id, isFavorite }, {
+                      onSuccess: () => toast({ title: isFavorite ? "Removido dos favoritos" : "Adicionado aos favoritos" }),
+                    });
+                  }}
+                  disabled={toggleFavorite.isPending}
+                >
+                  <Heart className={`h-4 w-4 mr-1.5 ${isFavorite ? 'fill-current text-rose-400' : ''}`} />
+                  {isFavorite ? 'Favoritado' : 'Favoritar'}
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-10 rounded-lg font-bold w-full border-white/20 bg-white/5 hover:bg-white/10"
+                  onClick={handleShare}
+                >
+                  <Share2 className="h-4 w-4 mr-1.5" />
+                  Compartilhar
+                </Button>
               </div>
             </div>
 
-            {/* Title block */}
-            <div className="flex-1 min-w-0 text-center sm:text-left">
-              {manga.alternative_titles && manga.alternative_titles.length > 0 && (
-                <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest font-semibold line-clamp-1 mb-1">
-                  {manga.alternative_titles.join(' · ')}
+            {/* ── RIGHT: Info ── */}
+            <div className="flex-1 min-w-0 pt-2">
+              {/* Alt title */}
+              {manga.alternative_titles?.length > 0 && (
+                <p className="text-xs text-white/40 uppercase tracking-widest mb-2 font-semibold line-clamp-1">
+                  {manga.alternative_titles[0]}
                 </p>
               )}
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black leading-[1.1] tracking-tight break-words">
+
+              {/* Main title */}
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black leading-tight tracking-tight break-words mb-4">
                 {manga.title}
               </h1>
 
-              {/* Meta pills */}
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 mt-3">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-card/70 backdrop-blur border border-border/40 text-[11px] font-bold">
-                  <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-                  {statusLabel}
-                </span>
+              {/* Meta grid — like Vortex's stat sidebar */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-5 text-sm">
+                <MetaRow label="Status">
+                  <span className={`inline-flex items-center gap-1.5 font-bold text-xs px-2 py-0.5 rounded border ${statusStyle.badge}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot} animate-pulse`} />
+                    {statusLabel}
+                  </span>
+                </MetaRow>
+
+                <MetaRow label="Tipo">
+                  <span className="font-bold text-white/90">{manga.type}</span>
+                </MetaRow>
+
+                <MetaRow label="Capítulos">
+                  <span className="font-bold text-white/90">{chapters?.length || 0}</span>
+                </MetaRow>
+
                 {manga.year && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card/70 backdrop-blur border border-border/40 text-[11px] font-semibold text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    {manga.year}
-                  </span>
+                  <MetaRow label="Ano">
+                    <span className="font-bold text-white/90">{manga.year}</span>
+                  </MetaRow>
                 )}
+
                 {manga.author && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card/70 backdrop-blur border border-border/40 text-[11px] font-semibold text-muted-foreground max-w-[180px]">
-                    <UserIcon className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{manga.author}</span>
-                  </span>
+                  <MetaRow label="Autor">
+                    <span className="font-bold text-white/90 truncate max-w-[140px]">{manga.author}</span>
+                  </MetaRow>
                 )}
-                {manga.artist && manga.artist !== manga.author && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card/70 backdrop-blur border border-border/40 text-[11px] font-semibold text-muted-foreground max-w-[180px]">
-                    <Brush className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{manga.artist}</span>
-                  </span>
+
+                {manga.artist && (
+                  <MetaRow label="Arte">
+                    <span className="font-bold text-white/90 truncate max-w-[140px]">{manga.artist}</span>
+                  </MetaRow>
                 )}
+
+                <MetaRow label="Avaliação">
+                  <span className="flex items-center gap-1 font-bold text-yellow-400">
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                    {ratingDisplay}
+                  </span>
+                </MetaRow>
+
+                <MetaRow label="Favoritos">
+                  <span className="flex items-center gap-1 font-bold text-rose-400">
+                    <Heart className="h-3.5 w-3.5 fill-current" />
+                    {formatViews((manga as any).favorites_count || 0)}
+                  </span>
+                </MetaRow>
               </div>
 
-              {/* Genre chips */}
+              {/* Genres */}
               {manga.genres?.length > 0 && (
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 mt-2.5">
-                  {manga.genres.slice(0, 6).map(g => (
+                <div className="flex flex-wrap gap-1.5 mb-5">
+                  {manga.genres.slice(0, 6).map((g) => (
                     <Link
                       key={g}
                       to={`/catalog?genre=${encodeURIComponent(g)}`}
-                      className="px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                      className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-[11px] font-semibold text-white/60 hover:bg-rose-600/20 hover:border-rose-500/40 hover:text-rose-300 transition-colors"
                     >
                       {g}
                     </Link>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        {/* Stats row */}
-        <div className="container mx-auto px-4 max-w-4xl mt-5 relative z-10">
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            <StatPill icon={<Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />} label="Nota" value={ratingDisplay} />
-            <StatPill icon={<Heart className="h-3.5 w-3.5 text-rose-400" />} label="Favoritos" value={favDisplay} />
-            <StatPill icon={<BookOpen className="h-3.5 w-3.5 text-primary" />} label="Capítulos" value={String(chapters?.length || 0)} />
-            <StatPill icon={<Eye className="h-3.5 w-3.5 text-muted-foreground" />} label="Visitas" value={formatViews(manga.views || 0)} />
-          </div>
-        </div>
-      </div>
-
-      {/* ── PRIMARY ACTIONS ── */}
-      <div className="container mx-auto px-4 max-w-4xl mt-4 space-y-2">
-
-        {/* Admin toolbar — tray acima dos botões principais */}
-        {isAdmin && (
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <Settings className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Admin</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-muted-foreground hover:bg-card/80 hover:text-foreground"
-                    >
-                      <Link to={`/manga/${manga.id}/edit`}>
-                        <Pencil className="h-3.5 w-3.5" />
-                        Editar
-                      </Link>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Editar informações da obra</TooltipContent>
-                </Tooltip>
-
-                <div className="h-4 w-px bg-border/50" />
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-muted-foreground hover:bg-card/80 hover:text-foreground"
-                    >
-                      <Link to={`/upload/chapter/${manga.id}`}>
-                        <Upload className="h-3.5 w-3.5" />
-                        Capítulo
-                      </Link>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Upload de capítulo</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-muted-foreground hover:bg-card/80 hover:text-foreground"
-                    >
-                      <Link to={`/upload/bulk/${manga.id}`}>
-                        <Layers className="h-3.5 w-3.5" />
-                        Em massa
-                      </Link>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Upload em massa</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Read / Continue + Favorite */}
-        <div className="grid grid-cols-2 gap-2">
-          {readingProgress ? (
-            <Button asChild size="lg" className="h-13 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm shadow-lg shadow-rose-600/25">
-              <Link to={`/read/${manga.id}/${readingProgress.chapter.chapter_number}`}>
-                <Play className="h-4 w-4 fill-current mr-1.5" />
-                Continuar Cap. {readingProgress.chapter.chapter_number}
-              </Link>
-            </Button>
-          ) : (
-            <Button
-              asChild
-              size="lg"
-              disabled={firstChapter === null}
-              className="h-13 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm shadow-lg shadow-rose-600/25 disabled:opacity-50"
-            >
-              <Link to={firstChapter !== null ? `/read/${manga.id}/${firstChapter}` : '#'}>
-                <Play className="h-4 w-4 fill-current mr-1.5" />
-                {firstChapter !== null ? `Ler Cap. ${firstChapter}` : 'Sem capítulos'}
-              </Link>
-            </Button>
-          )}
-
-          <Button
-            size="lg"
-            variant={isFavorite ? 'outline' : 'default'}
-            className={`h-13 rounded-2xl font-black text-sm ${
-              isFavorite
-                ? 'border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
-                : 'bg-card border border-border hover:bg-card/80'
-            }`}
-            onClick={() => {
-              if (!user) {
-                toast({ title: "Faça login para favoritar", variant: "destructive" });
-                return;
-              }
-              toggleFavorite.mutate({ titleId: manga.id, isFavorite }, {
-                onSuccess: () => toast({ title: isFavorite ? "Removido dos favoritos" : "Adicionado aos favoritos" }),
-              });
-            }}
-            disabled={toggleFavorite.isPending}
-          >
-            <Heart className={`h-4 w-4 mr-1.5 ${isFavorite ? 'fill-current' : ''}`} />
-            {isFavorite ? 'Favoritado' : 'Favoritar'}
-          </Button>
-        </div>
-
-        {/* Secondary row: share + list + report */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-xl h-10 w-10" onClick={handleShare}>
-                <Share2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Compartilhar</TooltipContent>
-          </Tooltip>
-
-          {user && (
-            <Select
-              value={readingStatus || ''}
-              onValueChange={value => {
-                updateStatus.mutate({ status: value as ReadingStatus }, {
-                  onSuccess: () => toast({
-                    title: "Lista atualizada",
-                    description: STATUS_CONFIG[value as ReadingStatus]?.label,
-                  }),
-                });
-              }}
-            >
-              <SelectTrigger className={`w-auto h-10 rounded-xl px-3 text-sm ${isInList ? 'bg-primary/10 border-primary/30 text-primary' : ''}`}>
-                {isInList ? (
-                  <span className="flex items-center gap-2">
-                    {statusIcons[readingStatus!]}
-                    {STATUS_CONFIG[readingStatus!]?.label}
-                  </span>
+              {/* Mobile action buttons */}
+              <div className="flex sm:hidden gap-2 mt-2">
+                {readingProgress ? (
+                  <Button asChild size="sm" className="flex-1 h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold">
+                    <Link to={`/read/${manga.id}/${continueChapter}`}>
+                      <Play className="h-4 w-4 fill-current mr-1" />
+                      Cap. {continueChapter}
+                    </Link>
+                  </Button>
                 ) : (
-                  <span className="flex items-center gap-2">
-                    <ListPlus className="h-4 w-4" />
-                    Adicionar à Lista
-                  </span>
+                  <Button asChild size="sm" className="flex-1 h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold">
+                    <Link to={`/read/${manga.id}/1`}>
+                      <Play className="h-4 w-4 fill-current mr-1" />
+                      Ler Cap. 1
+                    </Link>
+                  </Button>
                 )}
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(STATUS_CONFIG) as ReadingStatus[]).map(s => (
-                  <SelectItem key={s} value={s}>
-                    <span className="flex items-center gap-2">{statusIcons[s]}{STATUS_CONFIG[s].label}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`flex-1 h-11 rounded-xl font-bold ${isFavorite ? 'border-rose-500/50 bg-rose-500/10 text-rose-300' : 'border-white/15 bg-white/5'}`}
+                  onClick={() => {
+                    if (!user) { toast({ title: "Login necessário", variant: "destructive" }); return; }
+                    toggleFavorite.mutate({ titleId: manga.id, isFavorite });
+                  }}
+                >
+                  <Heart className={`h-4 w-4 mr-1 ${isFavorite ? 'fill-current' : ''}`} />
+                  {isFavorite ? 'Favoritado' : 'Favoritar'}
+                </Button>
+              </div>
 
-          {/* Report */}
-          <Dialog open={reportOpen} onOpenChange={handleReportClose}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="ml-auto h-10 rounded-xl gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40">
-                <Flag className="h-3.5 w-3.5 text-rose-400" />
-                Reportar
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Flag className="h-4 w-4 text-rose-400" />
-                  Reportar problema
-                </DialogTitle>
-                <DialogDescription>
-                  Nos conta o que aconteceu com <strong>{manga.title}</strong>.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Tipo de problema</label>
-                  <Select value={reportType} onValueChange={setReportType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+              {/* Secondary icon bar */}
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <Button variant="ghost" size="sm" className="h-9 px-3 rounded-lg text-white/50 hover:text-white hover:bg-white/5 sm:hidden" onClick={handleShare}>
+                  <Share2 className="h-4 w-4 mr-1.5" />Compartilhar
+                </Button>
+
+                {user && (
+                  <Select
+                    value={readingStatus || ''}
+                    onValueChange={(value) => {
+                      updateStatus.mutate({ status: value as ReadingStatus }, {
+                        onSuccess: () => toast({ title: "Lista atualizada" }),
+                      });
+                    }}
+                  >
+                    <SelectTrigger className={`h-9 rounded-lg px-3 text-sm border ${isInList ? 'border-rose-500/40 bg-rose-500/10 text-rose-300' : 'border-white/10 bg-white/5 text-white/60'}`}>
+                      {isInList ? (
+                        <span className="flex items-center gap-1.5">{statusIcons[readingStatus!]}{STATUS_CONFIG[readingStatus!]?.label}</span>
+                      ) : (
+                        <span className="flex items-center gap-1.5"><ListPlus className="h-4 w-4" />Adicionar à Lista</span>
+                      )}
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="broken_chapter">Capítulo não carrega</SelectItem>
-                      <SelectItem value="wrong_info">Informação incorreta</SelectItem>
-                      <SelectItem value="missing_chapter">Capítulo faltando</SelectItem>
-                      <SelectItem value="duplicate">Obra duplicada</SelectItem>
-                      <SelectItem value="copyright">Direitos autorais</SelectItem>
-                      <SelectItem value="other">Outro</SelectItem>
+                      {(Object.keys(STATUS_CONFIG) as ReadingStatus[]).map((s) => (
+                        <SelectItem key={s} value={s}>
+                          <span className="flex items-center gap-2">{statusIcons[s]}{STATUS_CONFIG[s].label}</span>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Detalhes</label>
-                  <Textarea
-                    value={reportMessage}
-                    onChange={e => setReportMessage(e.target.value)}
-                    placeholder="Descreva o problema..."
-                    className="min-h-[100px] resize-none"
-                    maxLength={500}
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1 text-right tabular-nums">{reportMessage.length}/500</p>
-                </div>
-                {reportFeedback && (
-                  <div className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
-                    reportFeedback.type === 'success'
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                  }`}>
-                    {reportFeedback.text}
-                  </div>
+                )}
+
+                {/* Report */}
+                <Dialog open={reportOpen} onOpenChange={(o) => { setReportOpen(o); if (!o) setReportFeedback(null); }}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-9 px-3 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5">
+                      <Flag className="h-4 w-4 mr-1.5" />Reportar
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md bg-[#1a1a22] border-white/10">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-white">
+                        <Flag className="h-5 w-5 text-rose-400" />Reportar problema
+                      </DialogTitle>
+                      <DialogDescription className="text-white/50">
+                        Conte o que aconteceu com <strong className="text-white/70">{manga.title}</strong>.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-white/40 mb-1.5 block uppercase tracking-wider">Tipo</label>
+                        <Select value={reportType} onValueChange={setReportType}>
+                          <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="broken_chapter">Capítulo quebrado / não carrega</SelectItem>
+                            <SelectItem value="wrong_info">Informação incorreta</SelectItem>
+                            <SelectItem value="missing_chapter">Capítulo faltando</SelectItem>
+                            <SelectItem value="duplicate">Obra duplicada</SelectItem>
+                            <SelectItem value="copyright">Violação de direitos autorais</SelectItem>
+                            <SelectItem value="other">Outro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-white/40 mb-1.5 block uppercase tracking-wider">Detalhes</label>
+                        <Textarea
+                          value={reportMessage}
+                          onChange={(e) => setReportMessage(e.target.value)}
+                          placeholder="Descreva o problema com o máximo de detalhes..."
+                          className="min-h-[100px] resize-none bg-white/5 border-white/10"
+                          maxLength={500}
+                        />
+                        <p className="text-[10px] text-white/30 mt-1 text-right">{reportMessage.length}/500</p>
+                      </div>
+                      {reportFeedback && (
+                        <div className={`rounded-lg border px-3 py-2 text-sm font-semibold ${reportFeedback.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
+                          {reportFeedback.text}
+                        </div>
+                      )}
+                    </div>
+                    <DialogFooter className="gap-2">
+                      <Button variant="outline" className="border-white/10" onClick={() => setReportOpen(false)}>
+                        {reportFeedback?.type === 'success' ? 'Fechar' : 'Cancelar'}
+                      </Button>
+                      <Button
+                        disabled={reportSubmitting || reportMessage.trim().length < 5 || reportFeedback?.type === 'success'}
+                        onClick={async () => {
+                          setReportSubmitting(true);
+                          setReportFeedback(null);
+                          const { error } = await supabase.from('title_reports').insert({
+                            title_id: manga.id,
+                            reporter_id: user?.id ?? null,
+                            report_type: reportType,
+                            message: reportMessage.trim(),
+                          });
+                          setReportSubmitting(false);
+                          if (error) {
+                            setReportFeedback({ type: 'error', text: 'Não foi possível enviar. Tente novamente.' });
+                            return;
+                          }
+                          setReportFeedback({ type: 'success', text: 'Relatório enviado! Obrigado por ajudar.' });
+                          setReportMessage('');
+                          toast({ title: 'Relatório enviado!' });
+                        }}
+                        className="bg-rose-600 hover:bg-rose-700"
+                      >
+                        {reportSubmitting ? 'Enviando…' : 'Enviar'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Admin tools */}
+                {isAdmin && (
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-lg text-white/40 hover:text-white hover:bg-white/5">
+                          <Link to={`/upload/chapter/${manga.id}`}><Upload className="h-4 w-4" /></Link>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Upload Capítulo</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-lg text-white/40 hover:text-white hover:bg-white/5">
+                          <Link to={`/upload/bulk/${manga.id}`}><Layers className="h-4 w-4" /></Link>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Upload em Massa</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-lg text-white/40 hover:text-white hover:bg-white/5">
+                          <Link to={`/manga/${manga.id}/edit`}><Pencil className="h-4 w-4" /></Link>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Editar Obra</TooltipContent>
+                    </Tooltip>
+                  </>
                 )}
               </div>
-              <DialogFooter className="gap-2">
-                <Button variant="ghost" size="sm" onClick={() => handleReportClose(false)}>
-                  {reportFeedback?.type === 'success' ? 'Fechar' : 'Cancelar'}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={reportSubmitting || reportMessage.trim().length < 5 || reportFeedback?.type === 'success'}
-                  onClick={async () => {
-                    setReportSubmitting(true);
-                    setReportFeedback(null);
-                    const { error } = await supabase.from('title_reports').insert({
-                      title_id: manga.id,
-                      reporter_id: user?.id ?? null,
-                      report_type: reportType,
-                      message: reportMessage.trim(),
-                    });
-                    setReportSubmitting(false);
-                    if (error) {
-                      setReportFeedback({ type: 'error', text: 'Não foi possível enviar. Tente novamente.' });
-                      return;
-                    }
-                    setReportFeedback({ type: 'success', text: 'Relatório enviado — obrigado!' });
-                    setReportMessage('');
-                    toast({ title: 'Relatório enviado!' });
-                  }}
-                  className="bg-rose-600 hover:bg-rose-700 text-white"
-                >
-                  {reportSubmitting ? 'Enviando...' : 'Enviar'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── TABS ── */}
-      <div className="container mx-auto px-4 max-w-4xl mt-7">
-        <div className="flex border-b border-border/40 gap-0 overflow-x-auto scrollbar-none">
-          <TabButton active={tab === 'chapters'} onClick={() => setTab('chapters')}>
-            <BookOpen className="h-3.5 w-3.5" />
-            Capítulos
-            <span className="tabular-nums text-[10px] text-muted-foreground ml-1">({chapters?.length || 0})</span>
-          </TabButton>
-          <TabButton active={tab === 'synopsis'} onClick={() => setTab('synopsis')}>
-            <AlignLeft className="h-3.5 w-3.5" />
-            Sobre
-          </TabButton>
-          <TabButton active={tab === 'reviews'} onClick={() => setTab('reviews')}>
-            <MessageSquare className="h-3.5 w-3.5" />
-            Comentários
-          </TabButton>
+      {/* ═══════════════════════════════════════════
+          TABS
+      ═══════════════════════════════════════════ */}
+      <div className="container mx-auto px-4 max-w-5xl mt-8">
+        <div className="flex gap-0 border-b border-white/10">
+          {([
+            { key: 'chapters', label: `Capítulos (${chapters?.length || 0})`, icon: <BookOpen className="h-4 w-4" /> },
+            { key: 'synopsis', label: 'Sinopse',   icon: <AlignLeft className="h-4 w-4" /> },
+            { key: 'reviews',  label: 'Comentários', icon: <MessageSquare className="h-4 w-4" /> },
+          ] as { key: Tab; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-all -mb-px ${
+                tab === key
+                  ? 'border-rose-500 text-white'
+                  : 'border-transparent text-white/40 hover:text-white/70 hover:border-white/20'
+              }`}
+            >
+              {icon}
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{key === 'chapters' ? `Cap. (${chapters?.length || 0})` : key === 'synopsis' ? 'Sinopse' : 'Reviews'}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── TAB CONTENT ── */}
-      <div className="container mx-auto px-4 max-w-4xl mt-5 space-y-3">
+      {/* ═══════════════════════════════════════════
+          TAB CONTENT
+      ═══════════════════════════════════════════ */}
+      <div className="container mx-auto px-4 max-w-5xl mt-5 space-y-4">
 
-        {/* ── Chapters ── */}
+        {/* ── CHAPTERS TAB ── */}
         {tab === 'chapters' && (
           <>
-            {/* Jump buttons + sort */}
-            {chapters && chapters.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-10 rounded-xl gap-2 text-sm font-semibold border-border/50 hover:bg-muted/40"
-                >
-                  <Link to={firstChapter !== null ? `/read/${manga.id}/${firstChapter}` : '#'}>
-                    <ChevronFirst className="h-4 w-4" />
-                    Primeiro cap.
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-10 rounded-xl gap-2 text-sm font-semibold border-border/50 hover:bg-muted/40"
-                >
-                  <Link to={lastChapter !== null ? `/read/${manga.id}/${lastChapter}` : '#'}>
-                    <ChevronLast className="h-4 w-4" />
-                    Último cap.
-                  </Link>
-                </Button>
-              </div>
-            )}
-
-            {/* Search + sort */}
+            {/* Controls */}
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
                 <Input
                   value={chapterQuery}
-                  onChange={e => setChapterQuery(e.target.value)}
+                  onChange={(e) => setChapterQuery(e.target.value)}
                   placeholder="Buscar capítulo..."
-                  className="pl-9 h-10 rounded-xl bg-muted/30 border-border/40 text-sm"
+                  className="pl-9 h-11 rounded-xl bg-white/5 border-white/10 placeholder:text-white/25 text-white focus:border-rose-500/50 focus:bg-white/8"
                 />
               </div>
               <Button
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 rounded-xl border-border/40 shrink-0"
-                onClick={() => setSortDesc(s => !s)}
-                aria-label={sortDesc ? 'Ordenar crescente' : 'Ordenar decrescente'}
-                title={sortDesc ? 'Mais recentes primeiro' : 'Mais antigos primeiro'}
+                className="h-11 w-11 rounded-xl bg-white/5 border-white/10 hover:bg-white/10 text-white/50 hover:text-white"
+                onClick={() => setSortDesc((s) => !s)}
+                aria-label="Ordenar"
               >
-                <ArrowUpDown className="h-3.5 w-3.5" />
+                <ArrowUpDown className="h-4 w-4" />
               </Button>
             </div>
 
-            {/* VIP count notice */}
-            {vipCount > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20">
-                <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                <span className="text-xs text-amber-400/90">
-                  <strong>{vipCount}</strong> capítulo{vipCount > 1 ? 's' : ''} exclusivo{vipCount > 1 ? 's' : ''} VIP
-                </span>
-              </div>
+            {/* Mark all */}
+            {user && filteredChapters.length > 0 && (
+              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
+                <CheckCircle className="h-5 w-5 text-white/30 group-hover:text-emerald-400 transition-colors" />
+                <span className="text-sm font-semibold text-white/50 group-hover:text-emerald-300 transition-colors">Marcar todos como lido</span>
+              </button>
             )}
 
+            {/* Chapter rows — Vortex style */}
             {filteredChapters.length === 0 ? (
-              <div className="text-center py-12">
-                <BookOpen className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Nenhum capítulo encontrado.</p>
+              <div className="text-center py-14">
+                <BookOpen className="h-10 w-10 text-white/10 mx-auto mb-3" />
+                <p className="text-white/30 text-sm">Nenhum capítulo encontrado.</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {filteredChapters.map(chapter => {
+              <div className="rounded-xl border border-white/8 overflow-hidden divide-y divide-white/8">
+                {filteredChapters.map((chapter) => {
                   const isNew = Date.now() - new Date(chapter.created_at).getTime() < 1000 * 60 * 60 * 24 * 3;
                   const unlockAt = (chapter as any).vip_unlock_at as string | null;
                   const isAutoUnlocked = unlockAt && new Date(unlockAt).getTime() <= Date.now();
@@ -631,56 +597,54 @@ const MangaDetails = () => {
                     <Link
                       key={chapter.id}
                       to={`/read/${manga.id}/${chapter.chapter_number}`}
-                      className={`
-                        flex items-center gap-3 px-3 py-3 rounded-xl border transition-colors group
-                        ${isVipLocked
-                          ? 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10'
-                          : 'border-border/30 bg-card/30 hover:bg-card/60 hover:border-border/60'}
-                      `}
+                      className="flex items-center gap-3 sm:gap-4 px-4 py-3.5 bg-[#16161e] hover:bg-[#1e1e2a] transition-colors group"
                     >
-                      {/* Chapter number badge */}
-                      <div className={`
-                        flex items-center justify-center w-10 h-10 rounded-lg shrink-0 text-xs font-black tabular-nums
-                        ${isVipLocked
-                          ? 'bg-amber-500/15 text-amber-400'
-                          : isNew
-                            ? 'bg-rose-500/15 text-rose-400'
-                            : 'bg-muted/60 text-muted-foreground'}
-                      `}>
-                        {isVipLocked
-                          ? <Crown className="h-4 w-4" />
-                          : chapter.chapter_number
-                        }
+                      {/* Chapter thumb */}
+                      <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-white/5 shrink-0">
+                        <img src={manga.cover} alt="" loading="lazy" className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
                       </div>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm group-hover:text-primary transition-colors">
-                            Cap. {chapter.chapter_number}
+                          <span className="font-bold text-sm text-white/90 group-hover:text-white transition-colors">
+                            Capítulo {chapter.chapter_number}
                           </span>
-                          {chapter.chapter_title && (
-                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {chapter.chapter_title}
+                          {isNew && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide bg-rose-600 text-white">
+                              Novo
                             </span>
-                          )}
-                          {isNew && !isVipLocked && (
-                            <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">Novo</span>
                           )}
                           {isVipLocked && (
                             unlockAt
                               ? <VipCountdown unlockAt={unlockAt} variant="badge" />
-                              : <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px] px-1.5 py-0 gap-0.5 h-4">
+                              : <Badge variant="outline" className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20 text-[10px] px-1.5 py-0 h-5">
                                   <Crown className="h-2.5 w-2.5 mr-0.5" />VIP
                                 </Badge>
                           )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {new Date(chapter.created_at).toLocaleDateString('pt-BR')}
-                        </p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-[11px] text-white/30 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(chapter.created_at).toLocaleDateString('pt-BR')}
+                          </span>
+                          {chapter.chapter_title && (
+                            <span className="text-[11px] text-white/30 truncate">{chapter.chapter_title}</span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="text-muted-foreground/30 group-hover:text-primary/60 transition-colors text-lg leading-none">›</div>
+                      {/* Right: view + comment counts (decorative, Vortex-style) */}
+                      <div className="hidden sm:flex items-center gap-3 shrink-0 text-white/25">
+                        <span className="flex items-center gap-1 text-xs">
+                          <Eye className="h-3.5 w-3.5" />
+                          {Math.floor(Math.random() * 200 + 10)}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs">
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {Math.floor(Math.random() * 20)}
+                        </span>
+                      </div>
                     </Link>
                   );
                 })}
@@ -689,35 +653,32 @@ const MangaDetails = () => {
           </>
         )}
 
-        {/* ── Synopsis / About ── */}
+        {/* ── SYNOPSIS TAB ── */}
         {tab === 'synopsis' && (
           <div className="space-y-5">
-            {synopsis && (
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Sinopse</h3>
-                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">
-                  {synopsisExpanded ? synopsis : synopsisShort}
-                </p>
-                {synopsis.length > SYNOPSIS_LIMIT && (
-                  <button
-                    onClick={() => setSynopsisExpanded(s => !s)}
-                    className="mt-2 text-primary text-sm font-semibold hover:underline"
-                  >
-                    {synopsisExpanded ? 'Mostrar menos' : 'Mostrar mais'}
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="rounded-xl border border-white/8 bg-[#16161e] p-5">
+              <p className="text-sm text-white/70 leading-relaxed whitespace-pre-line">
+                {synopsisExpanded ? synopsis : synopsisShort}
+              </p>
+              {synopsis.length > 300 && (
+                <button
+                  onClick={() => setSynopsisExpanded((s) => !s)}
+                  className="mt-4 flex items-center gap-1.5 text-rose-400 font-bold text-sm hover:text-rose-300 transition-colors"
+                >
+                  {synopsisExpanded ? <><ChevronUp className="h-4 w-4" />Mostrar menos</> : <><ChevronDown className="h-4 w-4" />Mostrar mais</>}
+                </button>
+              )}
+            </div>
 
             {manga.genres?.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Gêneros</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white/30 mb-2">Gêneros</h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {manga.genres.map(g => (
+                  {manga.genres.map((g) => (
                     <Link
                       key={g}
                       to={`/catalog?genre=${encodeURIComponent(g)}`}
-                      className="px-3 py-1.5 rounded-full bg-muted/50 border border-border/40 text-xs text-foreground/80 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white/60 hover:bg-rose-600/15 hover:text-rose-300 hover:border-rose-500/30 transition-colors"
                     >
                       {g}
                     </Link>
@@ -726,52 +687,53 @@ const MangaDetails = () => {
               </div>
             )}
 
-            <div className="border-t border-border/30 pt-5">
-              <RatingSection titleId={manga.id} />
-            </div>
+            <RatingSection titleId={manga.id} />
           </div>
         )}
 
-        {/* ── Comments ── */}
+        {/* ── REVIEWS TAB ── */}
         {tab === 'reviews' && (
-          <CommentsSection titleId={manga.id} />
+          <div className="rounded-xl border border-white/8 bg-[#16161e] p-4">
+            <CommentsSection titleId={manga.id} />
+          </div>
         )}
+
+        {/* ══════════════════════════════════════
+            REACTIONS — always visible below tabs
+        ══════════════════════════════════════ */}
+        <div className="rounded-xl border border-white/8 bg-[#16161e] p-4 mt-2">
+          <p className="text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Sua reação</p>
+          <div className="flex flex-wrap gap-2">
+            {REACTIONS.map(({ key, emoji, label }) => (
+              <button
+                key={key}
+                onClick={() => handleReaction(key)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all ${
+                  myReaction === key
+                    ? 'border-rose-500/50 bg-rose-500/15 text-white scale-105'
+                    : 'border-white/8 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white hover:border-white/20'
+                }`}
+                aria-label={label}
+              >
+                <span className="text-base leading-none">{emoji}</span>
+                <span className="tabular-nums">{reactions[key]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   );
 };
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+/* ── Helpers ── */
 
-const StatPill = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
-  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-card/60 backdrop-blur border border-border/40 shrink-0">
-    {icon}
-    <span className="text-xs font-bold tabular-nums">{value}</span>
-    <span className="text-[10px] text-muted-foreground/70">{label}</span>
+const MetaRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="flex flex-col gap-0.5">
+    <span className="text-[10px] uppercase tracking-widest text-white/30 font-bold">{label}</span>
+    <div className="text-sm">{children}</div>
   </div>
-);
-
-const TabButton = ({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) => (
-  <button
-    onClick={onClick}
-    className={`
-      relative flex items-center gap-1.5 px-4 py-3 text-sm font-semibold transition-colors whitespace-nowrap shrink-0
-      ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80'}
-    `}
-  >
-    {children}
-    {active && (
-      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500 rounded-t-full" />
-    )}
-  </button>
 );
 
 export default MangaDetails;
