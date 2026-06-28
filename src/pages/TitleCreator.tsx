@@ -205,21 +205,31 @@ const TitleCreator = () => {
     <div className="min-h-screen bg-background">
       <Header />
       <div className="container mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-8 flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={goBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary/10 p-3">
-              {isEditMode ? <Edit className="h-6 w-6 text-primary" /> : <Sparkles className="h-6 w-6 text-primary" />}
-            </div>
-            <div>
-              <h1 className="font-display text-2xl md:text-3xl font-bold">
-                {isEditMode ? 'Editar Obra' : 'Criar Nova Obra'}
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                {isEditMode ? 'Atualize os dados da obra' : 'Adicione um novo título ao catálogo'}
-              </p>
+        {/* Premium header */}
+        <div className="relative mb-8 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card p-5 md:p-6">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+            <div className="absolute bottom-0 left-1/4 h-24 w-48 rounded-full bg-primary/5 blur-2xl" />
+          </div>
+          <div className="relative flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={goBack} className="shrink-0 rounded-xl">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 shadow-lg shadow-primary/25">
+                {isEditMode ? <Edit className="h-6 w-6 text-primary-foreground" /> : <Sparkles className="h-6 w-6 text-primary-foreground" />}
+              </div>
+              <div className="min-w-0">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-primary/70">
+                  {isEditMode ? 'Editor de Obra' : 'Criador de Obra'}
+                </div>
+                <h1 className="font-display text-xl md:text-2xl font-black truncate">
+                  {isEditMode ? (existingTitle?.title || 'Editar Obra') : 'Criar Nova Obra'}
+                </h1>
+                <p className="text-muted-foreground text-xs">
+                  {isEditMode ? 'Atualize os dados, capítulos e configurações VIP' : 'Adicione um novo título ao catálogo Wolftoon'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -227,18 +237,27 @@ const TitleCreator = () => {
         {/* Category Selector - only for new titles */}
         {!isEditMode && (
           <div className="mb-6">
-            <Tabs value={category} onValueChange={(v) => setCategory(v as ContentCategory)}>
-              <TabsList className="bg-card/80 border border-border/50 p-1 rounded-xl">
-                <TabsTrigger value="comic" className="rounded-lg gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <ImageIcon className="h-4 w-4" />
-                  Comic / Manga
-                </TabsTrigger>
-                <TabsTrigger value="novel" className="rounded-lg gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <FileText className="h-4 w-4" />
-                  Novel
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="grid grid-cols-2 gap-3 max-w-sm">
+              {([
+                { value: 'comic', label: 'Comic / Manga', sublabel: 'Manhwa · Manhua · Mangá · Webtoon', icon: ImageIcon },
+                { value: 'novel', label: 'Novel', sublabel: 'Light Novel · Web Novel · Fanfic', icon: FileText },
+              ] as const).map(({ value, label, sublabel, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setCategory(value)}
+                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all ${
+                    category === value
+                      ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/30'
+                      : 'border-border/40 bg-card/60 hover:border-primary/30 hover:bg-primary/5'
+                  }`}
+                >
+                  <Icon className={`h-5 w-5 ${category === value ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className={`text-sm font-bold ${category === value ? 'text-primary' : 'text-foreground'}`}>{label}</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">{sublabel}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -392,19 +411,22 @@ const TitleCreator = () => {
 
                 {/* Chapter Management - Edit Mode Only */}
                 {isEditMode && editId && (
-                  <Card>
+                  <Card className="border-border/40">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2 text-base">
                           <BookOpen className="h-4 w-4 text-primary" />
-                          Capítulos ({chapters?.length || 0})
+                          Capítulos
+                          <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                            {chapters?.length || 0}
+                          </span>
                         </CardTitle>
                         <div className="flex gap-2">
-                          <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/upload/chapter/${editId}`)}>
-                            <Plus className="h-4 w-4 mr-1" /> Cap.
+                          <Button type="button" variant="outline" size="sm" className="rounded-lg h-8 text-xs" onClick={() => navigate(`/upload/chapter/${editId}`)}>
+                            <Plus className="h-3.5 w-3.5 mr-1" /> Capítulo
                           </Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/upload/bulk/${editId}`)}>
-                            <Upload className="h-4 w-4 mr-1" /> Lote
+                          <Button type="button" variant="outline" size="sm" className="rounded-lg h-8 text-xs" onClick={() => navigate(`/upload/bulk/${editId}`)}>
+                            <Upload className="h-3.5 w-3.5 mr-1" /> Em Lote
                           </Button>
                         </div>
                       </div>
@@ -416,18 +438,54 @@ const TitleCreator = () => {
                         </div>
                       ) : chapters && chapters.length > 0 ? (
                         <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
+                          {/* Summary bar */}
+                          <div className="flex items-center gap-3 mb-3 p-2.5 rounded-lg bg-muted/30 border border-border/30">
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Crown className="h-3 w-3 text-primary" />
+                              <span className="font-medium text-primary">{chapters.filter(c => c.is_vip).length} VIP</span>
+                            </div>
+                            <div className="w-px h-3 bg-border" />
+                            <div className="text-xs text-muted-foreground">
+                              {chapters.filter(c => !c.is_vip).length} gratuitos
+                            </div>
+                          </div>
                           {chapters.map(ch => (
-                            <div key={ch.id} className="flex items-center justify-between p-2.5 rounded-lg border border-border/50 hover:border-border transition-colors group">
+                            <div key={ch.id} className={`flex items-center justify-between p-2.5 rounded-lg border transition-all group ${
+                              ch.is_vip
+                                ? 'border-primary/30 bg-primary/5'
+                                : 'border-border/40 hover:border-border'
+                            }`}>
                               <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-sm font-medium shrink-0">Cap. {ch.chapter_number}</span>
-                                {ch.chapter_title && <span className="text-xs text-muted-foreground truncate">{ch.chapter_title}</span>}
-                                {ch.is_vip && <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] shrink-0"><Crown className="h-2.5 w-2.5 mr-0.5" />VIP</Badge>}
+                                <span className="text-xs font-bold tabular-nums text-muted-foreground w-14 shrink-0">
+                                  Cap. {ch.chapter_number}
+                                </span>
+                                {ch.chapter_title && (
+                                  <span className="text-xs text-muted-foreground truncate">{ch.chapter_title}</span>
+                                )}
+                                {ch.is_vip && (
+                                  <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] shrink-0">
+                                    <Crown className="h-2.5 w-2.5 mr-0.5" />VIP
+                                  </Badge>
+                                )}
                               </div>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleToggleVip(ch.id, !!ch.is_vip)} title={ch.is_vip ? 'Remover VIP' : 'Marcar VIP'}>
-                                  {ch.is_vip ? <Crown className="h-3.5 w-3.5 text-muted-foreground" /> : <Crown className="h-3.5 w-3.5 text-primary" />}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`h-7 w-7 p-0 ${ch.is_vip ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}
+                                  onClick={() => handleToggleVip(ch.id, !!ch.is_vip)}
+                                  title={ch.is_vip ? 'Remover VIP' : 'Marcar como VIP'}
+                                >
+                                  <Crown className="h-3.5 w-3.5" />
                                 </Button>
-                                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => confirmDeleteChapter(ch.id, ch.chapter_number)}>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => confirmDeleteChapter(ch.id, ch.chapter_number)}
+                                >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </div>
@@ -435,17 +493,38 @@ const TitleCreator = () => {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground text-center py-6">Nenhum capítulo adicionado ainda.</p>
+                        <div className="py-8 text-center">
+                          <BookOpen className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+                          <p className="text-sm text-muted-foreground">Nenhum capítulo adicionado ainda.</p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="mt-3 rounded-lg"
+                            onClick={() => navigate(`/upload/chapter/${editId}`)}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar Capítulo
+                          </Button>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
                 )}
 
                 <Separator />
-                <div className="flex justify-end gap-4">
-                  <Button type="button" variant="outline" onClick={goBack}>Cancelar</Button>
-                  <Button type="submit" disabled={createTitle.isPending || updateTitle.isPending}>
-                    {createTitle.isPending || updateTitle.isPending ? 'Salvando...' : isEditMode ? 'Salvar Alterações' : 'Criar Obra'}
+                <div className="flex justify-end gap-3">
+                  <Button type="button" variant="outline" className="rounded-xl" onClick={goBack}>Cancelar</Button>
+                  <Button
+                    type="submit"
+                    className="rounded-xl px-6 font-bold"
+                    disabled={createTitle.isPending || updateTitle.isPending}
+                  >
+                    {createTitle.isPending || updateTitle.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Salvando...</>
+                    ) : isEditMode ? (
+                      <><Edit className="h-4 w-4 mr-2" /> Salvar Alterações</>
+                    ) : (
+                      <><Sparkles className="h-4 w-4 mr-2" /> Criar Obra</>
+                    )}
                   </Button>
                 </div>
               </div>
