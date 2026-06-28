@@ -30,7 +30,7 @@ const STATUS_CONFIG: Record<string, { label: string }> = {
 };
 const getStatusLabel = (s: string) => STATUS_CONFIG[s]?.label ?? s;
 
-const PAGE_SIZE = 6; // 1 linhas × 2 cols
+const PAGE_SIZE = 2; // 1 linhas × 2 cols
 
 const NewWorksCard = memo(({ m }: { m: Title }) => (
   <Link to={`/manga/${m.slug || m.id}`} className="group block">
@@ -103,7 +103,7 @@ const RecentlyAddedSection = memo(({ titles }: Props) => {
       </div>
 
       {/* Grid 2 colunas fixo */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-6">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-6">
         {pageItems.map((m) => (
           <NewWorksCard key={m.id} m={m} />
         ))}
