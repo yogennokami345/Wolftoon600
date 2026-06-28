@@ -5,12 +5,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { MaintenanceProvider } from "./contexts/MaintenanceContext";
 import Index from "./pages/Index";
 import { useRealtimeNotifications } from "./hooks/useRealtimeNotifications";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnimatePresence } from "framer-motion";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./components/AppSidebar";
+import MaintenanceGuard from "./components/MaintenanceGuard";
+import MaintenanceBanner from "./components/MaintenanceBanner";
 
 
 const Catalog = lazy(() => import("./pages/Catalog"));
@@ -107,25 +110,31 @@ const AnimatedRoutes = () => {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <GlobalHooks />
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <SidebarProvider defaultOpen={false}>
-            <div className="min-h-screen flex w-full bg-background">
-              <AppSidebar />
-              <div className="flex-1 min-w-0 flex flex-col">
-                {/* Floating trigger — always visible */}
-                <div className="fixed top-3 left-3 z-[60]">
-                  <SidebarTrigger className="h-9 w-9 rounded-xl glass-strong hover:bg-primary/15 hover:text-primary transition-colors" />
+      <MaintenanceProvider>
+        <GlobalHooks />
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <MaintenanceGuard>
+              <SidebarProvider defaultOpen={false}>
+                <div className="min-h-screen flex w-full bg-background">
+                  <AppSidebar />
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    {/* Maintenance banner for admins */}
+                    <MaintenanceBanner />
+                    {/* Floating trigger — always visible */}
+                    <div className="fixed top-3 left-3 z-[60]">
+                      <SidebarTrigger className="h-9 w-9 rounded-xl glass-strong hover:bg-primary/15 hover:text-primary transition-colors" />
+                    </div>
+                    <AnimatedRoutes />
+                  </div>
                 </div>
-                <AnimatedRoutes />
-              </div>
-            </div>
-          </SidebarProvider>
-        </BrowserRouter>
-      </TooltipProvider>
+              </SidebarProvider>
+            </MaintenanceGuard>
+          </BrowserRouter>
+        </TooltipProvider>
+      </MaintenanceProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
