@@ -30,7 +30,7 @@ const STATUS_CONFIG: Record<string, { label: string }> = {
 };
 const getStatusLabel = (s: string) => STATUS_CONFIG[s]?.label ?? s;
 
-const PAGE_SIZE = 6; // 3 linhas × 2 cols
+const PAGE_SIZE = 6; // 1 linhas × 2 cols
 
 const NewWorksCard = memo(({ m }: { m: Title }) => (
   <Link to={`/manga/${m.slug || m.id}`} className="group block">
