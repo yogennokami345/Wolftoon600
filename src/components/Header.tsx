@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, Menu, User, Shield, Plus, BookMarked, Trophy, Crown, X, Home, BookOpen, LogOut } from "lucide-react";
+import { Search, Menu, User, Shield, Plus, BookMarked, Trophy, Crown, X, Home, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useRef, useEffect } from "react";
@@ -7,40 +7,28 @@ import { useAuth } from "@/contexts/AuthContext";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import BrandLogo from "@/components/BrandLogo";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSidebar } from "@/components/ui/sidebar";
 
 const Header = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { user, signOut, isAdmin, isVip } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const { toggleSidebar } = useSidebar();
 
   const isActive = (path: string) => location.pathname === path;
 
-  // Focus search input when opened
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
       searchInputRef.current.focus();
     }
   }, [isSearchOpen]);
 
-  // Close sidebar on route change
   useEffect(() => {
-    setIsSidebarOpen(false);
     setIsSearchOpen(false);
   }, [location.pathname]);
-
-  // Lock body scroll when sidebar is open
-  useEffect(() => {
-    if (isSidebarOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => { document.body.style.overflow = ""; };
-  }, [isSidebarOpen]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,8 +38,6 @@ const Header = () => {
       setIsSearchOpen(false);
     }
   };
-
-  const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Usuário';
 
   const navLinks = [
     { to: "/", label: "Início", icon: Home },
@@ -111,7 +97,7 @@ const Header = () => {
                   Admin
                 </Link>
                 <Link
-                  to="/admin/create"
+                  to="/create"
                   className="px-3 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 text-muted-foreground hover:text-accent-green hover:bg-accent-green/5"
                 >
                   <Plus className="h-4 w-4" />
@@ -148,7 +134,6 @@ const Header = () => {
             {user ? (
               <>
                 <NotificationDropdown />
-                {/* Desktop user dropdown - keep existing */}
                 <div className="hidden lg:block">
                   <Link to="/profile">
                     <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-primary/10 hover:text-primary">
@@ -171,12 +156,13 @@ const Header = () => {
               </Button>
             )}
 
-            {/* Mobile Menu Button */}
+            {/* Mobile Menu Button — opens AppSidebar via shadcn toggleSidebar */}
             <Button
               variant="ghost"
               size="icon"
               className="lg:hidden h-9 w-9"
-              onClick={() => setIsSidebarOpen(true)}
+              onClick={toggleSidebar}
+              aria-label="Abrir menu"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -210,150 +196,6 @@ const Header = () => {
           )}
         </AnimatePresence>
       </header>
-
-      {/* Sidebar Overlay */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm lg:hidden"
-              onClick={() => setIsSidebarOpen(false)}
-            />
-
-            {/* Sidebar */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed top-0 right-0 bottom-0 z-[70] w-72 bg-background border-l border-border/50 flex flex-col lg:hidden"
-            >
-              {/* Sidebar Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border/50">
-                <BrandLogo compact showText={false} className="gap-0" />
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSidebarOpen(false)}>
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-
-              {/* Navigation Links */}
-              <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    onClick={() => setIsSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                      link.highlight
-                        ? isActive(link.to)
-                          ? "bg-primary text-primary-foreground"
-                          : "text-primary hover:bg-primary/10"
-                        : isActive(link.to)
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground hover:bg-muted/50"
-                    }`}
-                  >
-                    <link.icon className="h-5 w-5" />
-                    {link.label}
-                  </Link>
-                ))}
-
-                {user && (
-                  <Link
-                    to="/my-list"
-                    onClick={() => setIsSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                      isActive("/my-list") ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/50"
-                    }`}
-                  >
-                    <BookMarked className="h-5 w-5" />
-                    Minha Lista
-                  </Link>
-                )}
-
-                {isAdmin && (
-                  <Link
-                    to="/create"
-                    onClick={() => setIsSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                      isActive("/create") || isActive("/admin/create")
-                        ? "bg-accent-green/15 text-accent-green"
-                        : "text-accent-green hover:bg-accent-green/10"
-                    }`}
-                  >
-                    <Plus className="h-5 w-5" />
-                    Criar Obra
-                  </Link>
-                )}
-              </nav>
-
-              {/* User Section at Bottom */}
-              <div className="border-t border-border/50 p-3 space-y-1">
-                {user ? (
-                  <>
-                    {/* User Info */}
-                    <Link
-                      to="/profile"
-                      onClick={() => setIsSidebarOpen(false)}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-muted/50 transition-all"
-                    >
-                      <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                        <span className="text-sm font-semibold text-primary">
-                          {username.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate flex items-center gap-1.5">
-                          {username}
-                          {isVip && <Crown className="h-3.5 w-3.5 text-yellow-500" />}
-                        </p>
-                      </div>
-                    </Link>
-
-                    {/* Admin Link */}
-                    {isAdmin && (
-                      <Link
-                        to="/admin"
-                        onClick={() => setIsSidebarOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-primary hover:bg-primary/10 transition-all"
-                      >
-                        <Shield className="h-5 w-5" />
-                        Painel Admin
-                      </Link>
-                    )}
-
-                    {/* Sign Out */}
-                    <button
-                      onClick={() => {
-                        signOut();
-                        setIsSidebarOpen(false);
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-all w-full"
-                    >
-                      <LogOut className="h-5 w-5" />
-                      Sair
-                    </button>
-                  </>
-                ) : (
-                  <Link
-                    to="/auth"
-                    onClick={() => setIsSidebarOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-primary hover:bg-primary/10 transition-all"
-                  >
-                    <User className="h-5 w-5" />
-                    Entrar / Cadastrar
-                  </Link>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </>
   );
 };
