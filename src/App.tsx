@@ -10,7 +10,7 @@ import Index from "./pages/Index";
 import { useRealtimeNotifications } from "./hooks/useRealtimeNotifications";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnimatePresence } from "framer-motion";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./components/AppSidebar";
 import MaintenanceGuard from "./components/MaintenanceGuard";
 import MaintenanceBanner from "./components/MaintenanceBanner";
@@ -123,10 +123,6 @@ const App = () => (
                   <div className="flex-1 min-w-0 flex flex-col">
                     {/* Maintenance banner for admins */}
                     <MaintenanceBanner />
-                    {/* Floating trigger — always visible */}
-                    <div className="fixed top-3 left-3 z-[60]">
-                      <SidebarTrigger className="h-9 w-9 rounded-xl glass-strong hover:bg-primary/15 hover:text-primary transition-colors" />
-                    </div>
                     <AnimatedRoutes />
                   </div>
                 </div>
